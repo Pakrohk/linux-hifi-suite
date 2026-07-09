@@ -1,6 +1,6 @@
 # Maintainer: Pakrohk <pakrohk@gmail.com>
 pkgname=redragon-audio-suite-git
-pkgver=0.0.0
+pkgver=0.3.2
 pkgrel=1
 pkgdesc="Complete audio suite for Redragon headsets on Arch Linux: PCM sync fix + 7.1.4 virtual surround + EQ + noise cancellation"
 arch=('any')
