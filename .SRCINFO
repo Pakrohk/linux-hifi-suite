@@ -1,6 +1,6 @@
 pkgbase = redragon-audio-suite-git
 	pkgdesc = Complete audio suite for Redragon headsets on Arch Linux: PCM sync fix + 7.1.4 virtual surround + EQ + noise cancellation
-	pkgver = 0.0.0
+	pkgver = 0.3.1
 	pkgrel = 1
 	url = https://github.com/cristianocps/redragon-hs-companion
 	install = redragon-audio-suite-git.install
