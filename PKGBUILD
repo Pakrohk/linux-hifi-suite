@@ -1,4 +1,3 @@
-
 # Maintainer: Pakrohk <pakrohk@gmail.com>
 pkgname=redragon-audio-suite-git
 pkgver=0.0.0
@@ -15,7 +14,9 @@ optdepends=(
     'plasma-desktop: KDE Plasma widget for volume control'
     'noise-suppression-for-voice: System-wide noise cancellation'
     'easyeffects: GUI for advanced audio effects'
-    'virtual-surround-manager: GUI to manage HeSuVi .wav files for EasyEffects'
+    'virtual-surround-manager: GUI to manage HeSuVi .wav files for EasyEffects (RECOMMENDED)'
+    'zenity: Graphical file picker for GNOME'
+    'kdialog: Graphical file picker for KDE'
 )
 provides=('redragon-hs-companion')
 conflicts=('redragon-hs-companion' 'redragon-hs-companion-git')
@@ -23,6 +24,7 @@ source=(
     "redragon-hs-companion::git+https://github.com/cristianocps/redragon-hs-companion.git"
     "pipewire-dx-utils::git+https://github.com/DekoDX/Pipewire-DX-Utils.git"
 )
+install="${pkgname}.install"
 md5sums=('SKIP' 'SKIP')
 
 pkgver() {
@@ -58,8 +60,8 @@ package() {
     echo ""
     echo "This suite includes:"
     echo "  1. redragon-hs-companion - PCM channel sync fix for wireless headsets"
-    echo "  2. Pipewire-DX-Utils - Advanced filter-chain configs (7.1.4 surround, EQ, noise cancellation)"
-    echo "  3. Setup script to auto-configure your devices"
+    echo "  2. Pipewire-DX-Utils - Advanced filter-chain configs (optional, use virtual-surround-manager instead)"
+    echo "  3. Setup script to guide you through configuration"
     echo ""
 
     # ============================================
@@ -68,21 +70,16 @@ package() {
     echo "--- Installing redragon-hs-companion ---"
     cd "$srcdir/redragon-hs-companion" || exit 1
 
+    install -d "$pkgdir/usr/bin"
+
     install -Dm755 redragon-volume "$pkgdir/usr/bin/redragon-volume"
     install -Dm755 redragon_control_daemon.py "$pkgdir/usr/bin/redragon_control_daemon.py"
     install -Dm755 redragon_daemon.py "$pkgdir/usr/bin/redragon_daemon.py"
+    install -Dm755 redragon_volume_sync.py "$pkgdir/usr/bin/redragon_volume_sync.py"
 
-    # Check if systemd service files exist before installing
+    install -d "$pkgdir/usr/lib/systemd/user"
     if [ -f "systemd/redragon-control-daemon.service" ]; then
         install -Dm644 systemd/redragon-control-daemon.service "$pkgdir/usr/lib/systemd/user/redragon-control-daemon.service"
-    else
-        echo "  Warning: redragon-control-daemon.service not found, skipping."
-    fi
-
-    if [ -f "systemd/redragon-volume-sync.service" ]; then
-        install -Dm644 systemd/redragon-volume-sync.service "$pkgdir/usr/lib/systemd/user/redragon-volume-sync.service"
-    else
-        echo "  Warning: redragon-volume-sync.service not found, skipping."
     fi
 
     echo ""
@@ -104,18 +101,15 @@ package() {
     fi
 
     # ============================================
-    # PART 2: Pipewire-DX-Utils (optional)
+    # PART 2: Pipewire-DX-Utils (optional, but recommended to skip)
     # ============================================
     echo ""
     echo "--- Pipewire-DX-Utils Configuration ---"
-    echo "This includes:"
-    echo "  - Virtual Surround 7.1.4 (requires .sofa file)"
-    echo "  - Convolution EQ (requires .wav file from AutoEq)"
-    echo "  - Noise Cancellation (requires noise-suppression-for-voice)"
-    echo "  - Echo Cancellation (for speakers/open-back headphones)"
+    echo "NOTE: It is recommended to use 'virtual-surround-manager' instead of manual configs."
+    echo "If you install Pipewire-DX-Utils, it may conflict with virtual-surround-manager."
     echo ""
 
-    if ask_user "Install Pipewire-DX-Utils configuration files?" "n"; then
+    if ask_user "Install Pipewire-DX-Utils configuration files (not recommended if using virtual-surround-manager)?" "n"; then
         cd "$srcdir/pipewire-dx-utils" || exit 1
 
         install -d "$pkgdir/etc/pipewire/filter-chain.conf.d/"
@@ -131,13 +125,15 @@ package() {
         if [ -f "README.md" ]; then
             install -Dm644 README.md "$pkgdir/usr/share/doc/redragon-audio-suite/Pipewire-DX-Utils-README.md"
         fi
+    fi
 
-        # ============================================
-        # PART 3: Setup Script
-        # ============================================
-        cat > "$pkgdir/usr/bin/redragon-audio-setup" << 'EOF'
+    # ============================================
+    # PART 3: Setup Script (with GUI file picker)
+    # ============================================
+    cat > "$pkgdir/usr/bin/redragon-audio-setup" << 'EOF'
 #!/bin/bash
 # Redragon Audio Suite - Interactive Setup Wizard (Arch Linux only)
+# This script guides you through configuring your Redragon headset.
 
 set -e
 
@@ -146,16 +142,18 @@ echo "  Redragon Audio Suite - Setup Wizard"
 echo "=========================================="
 echo ""
 
+# Check if running as root (needed for some operations)
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root (sudo) to modify system config files."
-    exit 1
+    echo "Some operations may require root privileges."
+    echo "Please run with sudo if you need to modify system files."
+    echo ""
 fi
 
 CONFIG_DIR="/etc/pipewire/filter-chain.conf.d"
 if [ ! -d "$CONFIG_DIR" ]; then
-    echo "Error: Pipewire-DX-Utils configs not found at $CONFIG_DIR"
-    echo "Please install redragon-audio-suite with Pipewire-DX-Utils first."
-    exit 1
+    echo "Pipewire-DX-Utils configs not found. Skipping manual config."
+    echo "You can use virtual-surround-manager for easier setup."
+    echo ""
 fi
 
 ask_user() {
@@ -173,229 +171,182 @@ ask_user() {
     done
 }
 
-get_node_id() {
-    local device_name="$1"
-    wpctl status 2>/dev/null | grep -E "│.*$device_name" | head -1 | awk '{print $2}' | tr -d '[]' || echo ""
+# Graphical file picker
+pick_file() {
+    local title="$1"
+    local filetypes="$2"
+    local selected=""
+
+    # Try Zenity (GNOME)
+    if command -v zenity &>/dev/null; then
+        selected=$(zenity --file-selection --title="$title" --file-filter="$filetypes" 2>/dev/null)
+    # Try KDialog (KDE)
+    elif command -v kdialog &>/dev/null; then
+        selected=$(kdialog --getopenfilename "$HOME" "$filetypes" --title "$title" 2>/dev/null)
+    # Fallback to manual input
+    else
+        echo "Graphical file picker not found. Please enter path manually."
+        read -p "Path: " selected
+    fi
+
+    echo "$selected"
 }
 
-show_resources() {
-    echo ""
-    echo "=========================================="
-    echo "  Recommended Resources for Audio Files"
-    echo "=========================================="
-    echo ""
-    echo "1. SOFA files (Virtual Surround 7.1.4):"
-    echo "   - Official SofaConventions database:"
-    echo "     https://www.sofaconventions.org/mediawiki/index.php/Downloads"
-    echo "   - Direct sample:"
-    echo "     https://sofacoustics.org/data/database_sofa_0.6/ari/dtf%20b_nh724.sofa"
-    echo ""
-    echo "2. HRIR WAV files (Convolution EQ / HeSuVi):"
-    echo "   - Airtable HRTF Database:"
-    echo "     https://airtable.com/appayGNkn3nSuXkaz/shruimhjdSakUPg2m"
-    echo "   - Direct downloads:"
-    echo "     * Atmos: https://mega.nz/folder/eS5yXKLJ#4DGd1mPK1uWrZVh_pCmLAg"
-    echo "     * CMSS-3D: https://mega.nz/folder/fWokGQKD#EMxOQx6McwxiotxTyXJQSg"
-    echo "     * Generic KEMAR: https://stuff.salscheider-online.de/hrir_kemar.tar.gz"
-    echo ""
-    echo "3. Convolution EQ WAV files:"
-    echo "   - AutoEq (generate for your headphone model):"
-    echo "     https://autoeq.app"
-    echo ""
-}
-
-echo "--- Step 1: Detecting Audio Devices ---"
-echo "Available audio devices:"
-wpctl status | grep -E "(Audio|Sink|Source)" | head -20
-echo ""
-echo "Please identify your headphone/speaker device name (e.g., 'alsa_output.pci-0000_00_1f.3.analog-stereo'):"
-read -p "Device name: " HEADPHONE_DEV
-HEADPHONE_NODE=$(get_node_id "$HEADPHONE_DEV")
-if [ -z "$HEADPHONE_NODE" ]; then
-    echo "Warning: Could not find node ID for '$HEADPHONE_DEV'."
-    echo "You can list all devices with: wpctl status"
-    read -p "Enter node ID manually (e.g., '42'): " HEADPHONE_NODE
+echo "--- Step 1: Enable redragon-hs-companion service ---"
+echo "This fixes PCM channel sync for wireless headsets."
+if ask_user "Enable redragon-control-daemon service now?" "y"; then
+    systemctl --user enable --now redragon-control-daemon.service 2>/dev/null || echo "  -> Failed to enable service (maybe already running)"
+    echo "  -> Service enabled"
 fi
-echo "  -> Headphone node ID: $HEADPHONE_NODE"
-
 echo ""
-echo "--- Step 2: Virtual Surround 7.1.4 (SOFA) ---"
-if ask_user "Enable virtual surround?" "n"; then
-    show_resources
-    echo "Please provide the path to your .sofa file:"
-    read -p "Path (e.g., /path/to/file.sofa): " SOFA_PATH
-    if [ -n "$SOFA_PATH" ] && [ -f "$SOFA_PATH" ]; then
-        echo "  -> Found: $SOFA_PATH"
-    else
-        echo "  -> File not found. Skipping."
-        SOFA_PATH=""
-    fi
+
+echo "--- Step 2: Virtual Surround (7.1.4) ---"
+echo "For virtual surround, you have two options:"
+echo "  1. Use virtual-surround-manager (RECOMMENDED) - GUI tool that handles everything"
+echo "  2. Manual configuration with Pipewire-DX-Utils (advanced)"
+echo ""
+if ask_user "Do you have virtual-surround-manager installed?" "n"; then
+    echo "Great! virtual-surround-manager is the recommended way."
+    echo "Launch it with: virtual-surround-manager"
+    echo "Select your headphone as output and choose a preset."
+    echo ""
+    echo "If you want to use EasyEffects, virtual-surround-manager can integrate with it."
+    echo "Check the documentation: https://github.com/Berny23/virtual-surround-manager"
 else
-    SOFA_PATH=""
-fi
-
-echo ""
-echo "--- Step 3: Convolution EQ (AutoEq WAV) ---"
-if ask_user "Enable convolution EQ?" "n"; then
-    echo "Generate a .wav file for your headphone model at:"
-    echo "  https://autoeq.app"
-    read -p "Path to .wav EQ file: " EQ_PATH
-    if [ -n "$EQ_PATH" ] && [ -f "$EQ_PATH" ]; then
-        echo "  -> Found: $EQ_PATH"
-    else
-        echo "  -> File not found. Skipping."
-        EQ_PATH=""
+    echo "Please install virtual-surround-manager:"
+    echo "  yay -S virtual-surround-manager"
+    echo ""
+    if ask_user "Install virtual-surround-manager now?" "n"; then
+        yay -S virtual-surround-manager --noconfirm || echo "Failed to install. Please install manually."
     fi
-else
-    EQ_PATH=""
 fi
-
 echo ""
-echo "--- Step 4: Noise Cancellation (Microphone) ---"
-echo "Requires noise-suppression-for-voice (pacman -S noise-suppression-for-voice)"
-if ask_user "Enable noise cancellation?" "n"; then
-    if command -v noise-suppression-for-voice &>/dev/null || [ -f "/usr/lib/ladspa/noise-suppression-voice.so" ]; then
-        NC_ENABLED=true
-        echo "  -> noise-suppression found."
+
+echo "--- Step 3: Convolution EQ (optional) ---"
+echo "If you want to use EQ, you need a .wav file from AutoEq."
+echo "Go to https://autoeq.app, select your headphone, choose 'Convolution' as app."
+echo ""
+if ask_user "Do you have a .wav EQ file?" "n"; then
+    echo "Please select your .wav file:"
+    EQ_FILE=$(pick_file "Select EQ WAV file" "*.wav")
+    if [ -n "$EQ_FILE" ] && [ -f "$EQ_FILE" ]; then
+        echo "  -> Selected: $EQ_FILE"
+        echo ""
+        echo "You can use this file with:"
+        echo "  - EasyEffects: Import as convolution filter"
+        echo "  - virtual-surround-manager: Use as EQ preset"
+        echo ""
+        # Optionally copy to a standard location
+        mkdir -p "$HOME/.config/redragon-audio-suite"
+        cp "$EQ_FILE" "$HOME/.config/redragon-audio-suite/eq.wav" 2>/dev/null || true
+        echo "  -> Copied to ~/.config/redragon-audio-suite/eq.wav"
     else
-        echo "Warning: noise-suppression-for-voice not found."
-        echo "Install it with: pacman -S noise-suppression-for-voice"
-        if ask_user "Continue without noise cancellation?" "y"; then
-            NC_ENABLED=false
-        else
-            exit 0
-        fi
+        echo "  -> No file selected or invalid."
     fi
-else
-    NC_ENABLED=false
 fi
-
 echo ""
-echo "--- Step 5: Echo Cancellation (for speakers/open-back headphones) ---"
+
+echo "--- Step 4: Noise Cancellation (optional) ---"
+echo "This requires noise-suppression-for-voice."
+if ask_user "Install noise-suppression-for-voice?" "n"; then
+    pacman -S noise-suppression-for-voice --noconfirm 2>/dev/null || echo "Failed to install. Please install manually."
+fi
+echo ""
+
+echo "--- Step 5: Echo Cancellation (optional) ---"
+echo "Only needed if you use speakers or open-back headphones."
 if ask_user "Enable echo cancellation?" "n"; then
-    EC_ENABLED=true
-    echo "Please provide your microphone device:"
-    read -p "Microphone device name: " MIC_DEV
-    MIC_NODE=$(get_node_id "$MIC_DEV")
-    if [ -z "$MIC_NODE" ]; then
-        read -p "Enter node ID manually: " MIC_NODE
-    fi
-    echo "  -> Microphone node ID: $MIC_NODE"
-else
-    EC_ENABLED=false
+    echo "To enable echo cancellation, you need to configure ec.conf."
+    echo "This is advanced. Refer to Pipewire-DX-Utils documentation."
 fi
-
 echo ""
-echo "--- Applying Configurations ---"
 
-update_node_target() {
-    local file="$1"
-    local node_id="$2"
-    if [ -f "$file" ]; then
-        sed -i "s/node.target = .*/node.target = $node_id/" "$file"
-        echo "  Updated $file with node.target = $node_id"
-    fi
-}
-
-update_file_path() {
-    local file="$1"
-    local old_path="$2"
-    local new_path="$3"
-    if [ -f "$file" ]; then
-        sed -i "s|$old_path|$new_path|g" "$file"
-        echo "  Updated $file: $old_path -> $new_path"
-    fi
-}
-
-if [ -n "$SOFA_PATH" ]; then
-    for conf in "$CONFIG_DIR"/surround-*.conf; do
-        if [ -f "$conf" ]; then
-            update_file_path "$conf" "/path/to/your/file.sofa" "$SOFA_PATH"
-            update_node_target "$conf" "$HEADPHONE_NODE"
-        fi
-    done
-fi
-
-if [ -n "$EQ_PATH" ] && [ -f "$CONFIG_DIR/eq.conf" ]; then
-    update_file_path "$CONFIG_DIR/eq.conf" "/path/to/your/eq.wav" "$EQ_PATH"
-    update_node_target "$CONFIG_DIR/eq.conf" "$HEADPHONE_NODE"
-fi
-
-if [ "$NC_ENABLED" = true ] && [ -f "$CONFIG_DIR/nc.conf" ]; then
-    sed -i '/node.target/d' "$CONFIG_DIR/nc.conf"
-    LADSPA_PATH=$(find /usr/lib/ladspa /usr/lib64/ladspa -name "noise-suppression*.so" 2>/dev/null | head -1)
-    if [ -n "$LADSPA_PATH" ] && [ -f "$LADSPA_PATH" ]; then
-        sed -i "s|/path/to/noise-suppression-voice.so|$LADSPA_PATH|g" "$CONFIG_DIR/nc.conf"
-        echo "  Updated LADSPA path to $LADSPA_PATH"
-    else
-        echo "  Warning: LADSPA plugin not found. Update manually in $CONFIG_DIR/nc.conf"
-    fi
-fi
-
-if [ "$EC_ENABLED" = true ] && [ -f "$CONFIG_DIR/ec.conf" ]; then
-    sed -i "0,/node.target = .*/s//node.target = $MIC_NODE/" "$CONFIG_DIR/ec.conf"
-    sed -i "0,/node.target = .*/s//node.target = $HEADPHONE_NODE/" "$CONFIG_DIR/ec.conf"
-    echo "  Updated ec.conf with mic node $MIC_NODE and headphone node $HEADPHONE_NODE"
-fi
-
+echo "=========================================="
+echo "  Setup Complete!"
+echo "=========================================="
 echo ""
-echo "--- Configuration applied successfully! ---"
+echo "Next steps:"
+echo "  1. If you installed virtual-surround-manager, launch it and configure:"
+echo "     virtual-surround-manager"
 echo ""
-echo "To activate, enable the filter-chain service:"
-echo "  systemctl --user enable --now filter-chain.service"
+echo "  2. For EasyEffects integration, install easyeffects and virtual-surround-manager"
+echo "     then use virtual-surround-manager's built-in support."
 echo ""
-echo "Then set 'Virtual Surround Sink' as default in pavucontrol."
+echo "  3. Set 'Virtual Surround Sink' as default in pavucontrol (if using manual config)."
 echo ""
 echo "Resources:"
-echo "  - SOFA: https://www.sofaconventions.org/mediawiki/index.php/Downloads"
-echo "  - HRTF DB: https://airtable.com/appayGNkn3nSuXkaz/shruimhjdSakUPg2m"
-echo "  - AutoEq: https://autoeq.app"
+echo "  - virtual-surround-manager: https://github.com/Berny23/virtual-surround-manager"
+echo "  - AutoEq (WAV for EQ): https://autoeq.app"
+echo "  - EasyEffects: https://github.com/wwmm/easyeffects"
 EOF
 
-        chmod +x "$pkgdir/usr/bin/redragon-audio-setup"
-        echo "  -> Setup script installed to /usr/bin/redragon-audio-setup"
+    chmod +x "$pkgdir/usr/bin/redragon-audio-setup"
+    echo "  -> Setup script installed to /usr/bin/redragon-audio-setup"
 
-        # ============================================
-        # PART 4: Documentation
-        # ============================================
-        cat > "$pkgdir/usr/share/doc/redragon-audio-suite/QUICKSTART.md" << 'EOF'
+    # ============================================
+    # PART 4: Documentation
+    # ============================================
+    cat > "$pkgdir/usr/share/doc/redragon-audio-suite/QUICKSTART.md" << 'EOF'
 # Quick Start Guide for Redragon Audio Suite
 
 ## After Installation
 
-1. **Run the setup wizard** (as root):
+1. **Enable the control daemon**:
+   ```
+   systemctl --user enable --now redragon-control-daemon.service
+   ```
+
+2. **Run the setup wizard**:
    ```
    sudo redragon-audio-setup
    ```
+   This will guide you through installing and configuring virtual-surround-manager, EQ, and more.
 
-2. **Enable the filter-chain service**:
+## Recommended Setup (with virtual-surround-manager)
+
+1. Install virtual-surround-manager (if not installed):
    ```
-   systemctl --user enable --now filter-chain.service
+   yay -S virtual-surround-manager
    ```
 
-3. **Set Virtual Surround Sink as default** in pavucontrol.
+2. Launch it:
+   ```
+   virtual-surround-manager
+   ```
 
-## Required Files
+3. Select your headphone as output device.
 
-- **Virtual Surround (.sofa)**: Download from SofaConventions or Airtable.
-- **EQ (.wav)**: Generate from AutoEq for your headphone model.
+4. Choose a preset (e.g., Atmos, CMSS-3D).
 
-Rerun `sudo redragon-audio-setup` after downloading.
+5. If you use EasyEffects, enable integration in virtual-surround-manager.
 
-## GUI Options
+## Manual Configuration (Pipewire-DX-Utils)
 
-- `easyeffects` – graphical audio effects
-- `virtual-surround-manager` – manage HeSuVi .wav files
+If you prefer manual config, the files are installed at:
+- `/etc/pipewire/filter-chain.conf.d/`
+- `/etc/pipewire/pipewire.conf.d/`
+
+Refer to the documentation:
+- `/usr/share/doc/redragon-audio-suite/Pipewire-DX-Utils-README.md`
+
+## Troubleshooting
+
+- If you don't hear sound, check `wpctl status` to see active nodes.
+- The filter-chain service logs can be checked with:
+  ```
+  journalctl --user -u filter-chain.service -f
+  ```
+- Make sure all paths in the config files are correct.
 
 ## Resources
 
+- virtual-surround-manager: https://github.com/Berny23/virtual-surround-manager
+- AutoEq (WAV for EQ): https://autoeq.app
+- EasyEffects: https://github.com/wwmm/easyeffects
 - SofaConventions: https://www.sofaconventions.org/mediawiki/index.php/Downloads
-- Airtable HRTF DB: https://airtable.com/appayGNkn3nSuXkaz/shruimhjdSakUPg2m
-- AutoEq: https://autoeq.app
 EOF
 
-        echo "  -> Documentation installed to /usr/share/doc/redragon-audio-suite/"
-    fi
+    echo "  -> Documentation installed to /usr/share/doc/redragon-audio-suite/"
 
     echo ""
     echo "=========================================="
@@ -403,14 +354,10 @@ EOF
     echo "=========================================="
     echo ""
     echo "Next steps:"
-    echo "  1. Enable redragon-hs-companion services:"
+    echo "  1. Enable redragon-hs-companion service:"
     echo "     systemctl --user enable --now redragon-control-daemon.service"
-    echo "     systemctl --user enable --now redragon-volume-sync.service"
     echo ""
     echo "  2. Run the setup wizard:"
     echo "     sudo redragon-audio-setup"
-    echo ""
-    echo "  3. Enable filter-chain service:"
-    echo "     systemctl --user enable --now filter-chain.service"
     echo ""
 }
