@@ -1,9 +1,9 @@
-# Post-installation script for Redragon Audio Suite
+# redragon-audio-suite.install
 
 post_install() {
     echo ""
     echo "=========================================="
-    echo "  Redragon Audio Suite Installed! 🎧"
+    echo "  Redragon Audio Suite v0.3.2 Installed! 🎧"
     echo "=========================================="
     echo ""
     echo "📌 Next steps:"
@@ -16,8 +16,6 @@ post_install() {
     echo ""
     echo "  3️⃣ Install virtual-surround-manager (recommended):"
     echo "     yay -S virtual-surround-manager"
-    echo ""
-    echo "  4️⃣ Set 'Virtual Surround Sink' as default in pavucontrol (if using manual config)"
     echo ""
     echo "📖 For more details, see:"
     echo "     /usr/share/doc/redragon-audio-suite/QUICKSTART.md"
@@ -60,7 +58,7 @@ post_remove() {
     echo "  Redragon Audio Suite Removed"
     echo "=========================================="
     echo ""
-    echo "If you want to completely remove all configuration files:"
+    echo "To completely remove all configuration files:"
     echo "  rm -rf /etc/pipewire/filter-chain.conf.d/"
     echo "  rm -rf /etc/pipewire/pipewire.conf.d/"
     echo ""
