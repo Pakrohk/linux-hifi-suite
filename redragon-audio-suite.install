@@ -3,7 +3,7 @@
 post_install() {
     echo ""
     echo "=========================================="
-    echo "  Redragon Audio Suite v0.3.2-2 Installed! 🎧"
+    echo "  Redragon Audio Suite v0.3.3-1 Installed! 🎧"
     echo "=========================================="
     echo ""
     echo "📌 Next steps:"
@@ -16,6 +16,12 @@ post_install() {
     echo ""
     echo "  3️⃣ Install virtual-surround-manager (recommended):"
     echo "     yay -S virtual-surround-manager"
+    echo ""
+    echo "📦 Desktop Widgets:"
+    echo "     - GNOME, Cinnamon, and KDE Plasma widgets are installed by default"
+    echo "     - KDE Plasma widget is patched for Plasma 6 compatibility"
+    echo "     - If you use Plasma, restart it:"
+    echo "       kquitapp6 plasmashell && kstart6 plasmashell &"
     echo ""
     echo "📖 For more details, see:"
     echo "     /usr/share/doc/redragon-audio-suite/QUICKSTART.md"
@@ -36,6 +42,9 @@ post_upgrade() {
     echo ""
     echo "If you encounter any issues, rerun the setup wizard:"
     echo "  sudo redragon-audio-setup"
+    echo ""
+    echo "If you use KDE Plasma, restart it after upgrade:"
+    echo "  kquitapp6 plasmashell && kstart6 plasmashell &"
     echo ""
 }
 

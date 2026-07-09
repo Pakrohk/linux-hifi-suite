@@ -1,7 +1,7 @@
 # Maintainer: Pakrohk <pakrohk@gmail.com>
 pkgname=redragon-audio-suite-git
-pkgver=0.3.2
-pkgrel=3
+pkgver=0.3.3
+pkgrel=1
 pkgdesc="Complete audio suite for Redragon headsets on Arch Linux: PCM sync fix + 7.1.4 virtual surround + EQ + noise cancellation"
 arch=('any')
 url="https://github.com/cristianocps/redragon-hs-companion"
@@ -24,9 +24,10 @@ source=(
     "redragon-hs-companion::git+https://github.com/cristianocps/redragon-hs-companion.git"
     "pipewire-dx-utils::git+https://github.com/DekoDX/Pipewire-DX-Utils.git"
     "redragon-audio-suite.install"
+    "plasma-widget.patch"
 )
 install="redragon-audio-suite.install"
-md5sums=('SKIP' 'SKIP' 'SKIP')
+md5sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     echo ""
@@ -51,7 +52,7 @@ package() {
             "$pkgdir/usr/lib/systemd/user/redragon-control-daemon.service"
     fi
 
-    # ---------- Desktop Widgets (install all by default) ----------
+    # ---------- Desktop Widgets ----------
     echo "--- Installing desktop widgets ---"
 
     # GNOME Extension
@@ -70,21 +71,44 @@ package() {
         echo "  -> Cinnamon applet installed"
     fi
 
-    # KDE Plasma Widget
+    # KDE Plasma Widget (with patch)
     if [ -d "plasma-widget" ]; then
         local widget_dir="$pkgdir/usr/share/plasma/plasmoids/redragon-volume-sync@cristiano"
         install -d "$widget_dir"
         cp -r plasma-widget/* "$widget_dir/"
+
+        # Apply patch to fix main.qml for Plasma 6
+        if [ -f "$srcdir/plasma-widget.patch" ]; then
+            cd "$widget_dir"
+            patch -p1 < "$srcdir/plasma-widget.patch" 2>/dev/null && \
+                echo "  -> KDE Plasma widget patched for Plasma 6" || \
+                echo "  -> Warning: Patch failed, applying manual fixes..."
+            cd - > /dev/null
+        fi
+
+        # Manual fallback fixes (if patch fails)
         if [ -f "$widget_dir/contents/ui/main.qml" ]; then
+            # Fix 1: Replace PlasmaComponents3.Separator
             sed -i 's/PlasmaComponents3\.Separator {/Rectangle { height: 1; width: parent.width; color: Qt.rgba(0, 0, 0, 0.2) }/g' \
                 "$widget_dir/contents/ui/main.qml"
-            echo "  -> KDE Plasma widget installed and patched for Plasma 6"
-        else
-            echo "  -> KDE Plasma widget installed"
+
+            # Fix 2: Remove duplicate braces and fix syntax errors
+            sed -i '/^\s*}\s*}/d' "$widget_dir/contents/ui/main.qml"
+            sed -i 's/}\s*}/}/g' "$widget_dir/contents/ui/main.qml"
+            sed -i 's/{\s*{/{/g' "$widget_dir/contents/ui/main.qml"
+
+            # Fix 3: Add missing braces in RowLayout (line ~285)
+            sed -i '/RowLayout {/,/}/{
+                s/\(PlasmaComponents3\.Label {\)/}\n    \1/
+                s/\(PlasmaComponents3\.Slider {\)/    \1/
+                s/\(onMoved:.*\)/\1}/
+            }' "$widget_dir/contents/ui/main.qml"
+
+            echo "  -> KDE Plasma widget installed with manual fixes"
         fi
     fi
 
-    # ---------- Pipewire-DX-Utils (not installed by default) ----------
+    # ---------- Pipewire-DX-Utils ----------
     echo "  -> Pipewire-DX-Utils not installed (use setup script to enable)"
 
     # ---------- Setup Script ----------
@@ -142,15 +166,7 @@ if ask_user "Enable redragon-control-daemon service now?" "y"; then
 fi
 echo ""
 
-echo "--- Step 2: Desktop Widgets ---"
-echo "Widgets are installed for all desktop environments (GNOME, Cinnamon, KDE)."
-echo "You can enable/disable them manually:"
-echo "  - GNOME: Extensions app → Redragon HS Companion"
-echo "  - Cinnamon: Settings → Applets → Redragon HS Companion"
-echo "  - KDE: Right-click panel → Add Widgets → Redragon HS Companion"
-echo ""
-
-echo "--- Step 3: Virtual Surround (7.1.4) ---"
+echo "--- Step 2: Virtual Surround (7.1.4) ---"
 echo "For virtual surround, you have two options:"
 echo "  1. Use virtual-surround-manager (RECOMMENDED) - GUI tool that handles everything"
 echo "  2. Manual configuration with Pipewire-DX-Utils (advanced)"
@@ -169,7 +185,7 @@ else
 fi
 echo ""
 
-echo "--- Step 4: Convolution EQ (optional) ---"
+echo "--- Step 3: Convolution EQ (optional) ---"
 echo "If you want to use EQ, you need a .wav file from AutoEq."
 echo "Go to https://autoeq.app, select your headphone, choose 'Convolution' as app."
 echo ""
@@ -187,20 +203,15 @@ if ask_user "Do you have a .wav EQ file?" "n"; then
 fi
 echo ""
 
-echo "--- Step 5: Noise Cancellation (optional) ---"
+echo "--- Step 4: Noise Cancellation (optional) ---"
 if ask_user "Install noise-suppression-for-voice?" "n"; then
     pacman -S noise-suppression-for-voice --noconfirm 2>/dev/null || echo "Failed to install. Please install manually."
 fi
 echo ""
 
-echo "--- Step 6: Pipewire-DX-Utils (advanced) ---"
-if ask_user "Install Pipewire-DX-Utils manual configuration files?" "n"; then
-    echo "Installing Pipewire-DX-Utils to /etc/pipewire..."
-    cd /usr/share/doc/redragon-audio-suite/ || exit 1
-    # We need to copy from the source, but it's not available at runtime.
-    # Instead, we'll install it during package build if user wants.
-    echo "  -> Please note: Pipewire-DX-Utils must be installed during package build."
-    echo "  -> To install, rebuild the package and select 'yes' when prompted."
+echo "--- Step 5: Echo Cancellation (optional) ---"
+if ask_user "Enable echo cancellation?" "n"; then
+    echo "To enable echo cancellation, you need to configure ec.conf manually."
 fi
 echo ""
 
