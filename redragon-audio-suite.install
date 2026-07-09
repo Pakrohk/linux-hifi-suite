@@ -3,7 +3,7 @@
 post_install() {
     echo ""
     echo "=========================================="
-    echo "  Redragon Audio Suite v0.3.2 Installed! 🎧"
+    echo "  Redragon Audio Suite v0.3.2-2 Installed! 🎧"
     echo "=========================================="
     echo ""
     echo "📌 Next steps:"

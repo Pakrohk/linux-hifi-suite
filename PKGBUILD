@@ -1,7 +1,7 @@
 # Maintainer: Pakrohk <pakrohk@gmail.com>
 pkgname=redragon-audio-suite-git
 pkgver=0.3.2
-pkgrel=1
+pkgrel=3
 pkgdesc="Complete audio suite for Redragon headsets on Arch Linux: PCM sync fix + 7.1.4 virtual surround + EQ + noise cancellation"
 arch=('any')
 url="https://github.com/cristianocps/redragon-hs-companion"
@@ -23,24 +23,10 @@ conflicts=('redragon-hs-companion' 'redragon-hs-companion-git')
 source=(
     "redragon-hs-companion::git+https://github.com/cristianocps/redragon-hs-companion.git"
     "pipewire-dx-utils::git+https://github.com/DekoDX/Pipewire-DX-Utils.git"
+    "redragon-audio-suite.install"
 )
-install="${pkgname}.install"
-md5sums=('SKIP' 'SKIP')
-
-ask_user() {
-    local question="$1"
-    local default="${2:-n}"
-    local answer
-    while true; do
-        read -p "$question [Y/n]: " answer
-        answer=${answer:-$default}
-        case $answer in
-            [Yy]* ) return 0 ;;
-            [Nn]* ) return 1 ;;
-            * ) echo "Please answer yes or no." ;;
-        esac
-    done
-}
+install="redragon-audio-suite.install"
+md5sums=('SKIP' 'SKIP' 'SKIP')
 
 package() {
     echo ""
@@ -48,78 +34,60 @@ package() {
     echo "  Redragon Audio Suite Installation"
     echo "=========================================="
     echo ""
-    echo "This suite includes:"
-    echo "  1. redragon-hs-companion - PCM channel sync fix for wireless headsets"
-    echo "  2. Pipewire-DX-Utils - Advanced filter-chain configs (optional)"
-    echo "  3. Setup script to guide you through configuration"
-    echo ""
 
-    # ============================================
-    # PART 1: redragon-hs-companion (core)
-    # ============================================
+    # ---------- Part 1: redragon-hs-companion ----------
     echo "--- Installing redragon-hs-companion ---"
     cd "$srcdir/redragon-hs-companion" || exit 1
 
     install -d "$pkgdir/usr/bin"
-
-    install -Dm755 redragon-volume "$pkgdir/usr/bin/redragon-volume"
-    install -Dm755 redragon_control_daemon.py "$pkgdir/usr/bin/redragon_control_daemon.py"
-    install -Dm755 redragon_daemon.py "$pkgdir/usr/bin/redragon_daemon.py"
-    install -Dm755 redragon_volume_sync.py "$pkgdir/usr/bin/redragon_volume_sync.py"
+    install -Dm755 redragon-volume "$pkgdir/usr/bin/"
+    install -Dm755 redragon_control_daemon.py "$pkgdir/usr/bin/"
+    install -Dm755 redragon_daemon.py "$pkgdir/usr/bin/"
+    install -Dm755 redragon_volume_sync.py "$pkgdir/usr/bin/"
 
     install -d "$pkgdir/usr/lib/systemd/user"
     if [ -f "systemd/redragon-control-daemon.service" ]; then
-        install -Dm644 systemd/redragon-control-daemon.service "$pkgdir/usr/lib/systemd/user/redragon-control-daemon.service"
+        install -Dm644 systemd/redragon-control-daemon.service \
+            "$pkgdir/usr/lib/systemd/user/redragon-control-daemon.service"
     fi
 
-    echo ""
-    echo "--- Desktop Widgets (redragon-hs-companion) ---"
-    if [ -d "gnome-extension" ] && ask_user "Install GNOME Shell extension?" "n"; then
-        install -d "$pkgdir/usr/share/gnome-shell/extensions/redragon-volume-sync@cristiano"
-        cp -r gnome-extension/* "$pkgdir/usr/share/gnome-shell/extensions/redragon-volume-sync@cristiano/"
+    # ---------- Desktop Widgets (install all by default) ----------
+    echo "--- Installing desktop widgets ---"
+
+    # GNOME Extension
+    if [ -d "gnome-extension" ]; then
+        local ext_dir="$pkgdir/usr/share/gnome-shell/extensions/redragon-volume-sync@cristiano"
+        install -d "$ext_dir"
+        cp -r gnome-extension/* "$ext_dir/"
         echo "  -> GNOME extension installed"
     fi
-    if [ -d "cinnamon-applet" ] && ask_user "Install Cinnamon applet?" "n"; then
-        install -d "$pkgdir/usr/share/cinnamon/applets/redragon-volume-sync@cristiano"
-        cp -r cinnamon-applet/* "$pkgdir/usr/share/cinnamon/applets/redragon-volume-sync@cristiano/"
+
+    # Cinnamon Applet
+    if [ -d "cinnamon-applet" ]; then
+        local applet_dir="$pkgdir/usr/share/cinnamon/applets/redragon-volume-sync@cristiano"
+        install -d "$applet_dir"
+        cp -r cinnamon-applet/* "$applet_dir/"
         echo "  -> Cinnamon applet installed"
     fi
-    if [ -d "plasma-widget" ] && ask_user "Install KDE Plasma widget?" "n"; then
-        install -d "$pkgdir/usr/share/plasma/plasmoids/redragon-volume-sync@cristiano"
-        cp -r plasma-widget/* "$pkgdir/usr/share/plasma/plasmoids/redragon-volume-sync@cristiano/"
-        echo "  -> KDE Plasma widget installed"
-    fi
 
-    # ============================================
-    # PART 2: Pipewire-DX-Utils (optional)
-    # ============================================
-    echo ""
-    echo "--- Pipewire-DX-Utils Configuration ---"
-    echo "NOTE: It is recommended to use 'virtual-surround-manager' instead of manual configs."
-    echo "If you install Pipewire-DX-Utils, it may conflict with virtual-surround-manager."
-    echo ""
-
-    if ask_user "Install Pipewire-DX-Utils configuration files (not recommended)?" "n"; then
-        cd "$srcdir/pipewire-dx-utils" || exit 1
-
-        install -d "$pkgdir/etc/pipewire/filter-chain.conf.d/"
-        install -d "$pkgdir/etc/pipewire/pipewire.conf.d/"
-        install -d "$pkgdir/usr/share/doc/redragon-audio-suite/"
-
-        if [ -d "filter-chain.conf.d" ]; then
-            cp -r filter-chain.conf.d/* "$pkgdir/etc/pipewire/filter-chain.conf.d/"
-        fi
-        if [ -d "pipewire.conf.d" ]; then
-            cp -r pipewire.conf.d/* "$pkgdir/etc/pipewire/pipewire.conf.d/"
-        fi
-        if [ -f "README.md" ]; then
-            install -Dm644 README.md "$pkgdir/usr/share/doc/redragon-audio-suite/Pipewire-DX-Utils-README.md"
+    # KDE Plasma Widget
+    if [ -d "plasma-widget" ]; then
+        local widget_dir="$pkgdir/usr/share/plasma/plasmoids/redragon-volume-sync@cristiano"
+        install -d "$widget_dir"
+        cp -r plasma-widget/* "$widget_dir/"
+        if [ -f "$widget_dir/contents/ui/main.qml" ]; then
+            sed -i 's/PlasmaComponents3\.Separator {/Rectangle { height: 1; width: parent.width; color: Qt.rgba(0, 0, 0, 0.2) }/g' \
+                "$widget_dir/contents/ui/main.qml"
+            echo "  -> KDE Plasma widget installed and patched for Plasma 6"
+        else
+            echo "  -> KDE Plasma widget installed"
         fi
     fi
 
-    # ============================================
-    # PART 3: Setup Script (with GUI file picker)
-    # ============================================
+    # ---------- Pipewire-DX-Utils (not installed by default) ----------
+    echo "  -> Pipewire-DX-Utils not installed (use setup script to enable)"
+
+    # ---------- Setup Script ----------
     cat > "$pkgdir/usr/bin/redragon-audio-setup" << 'EOF'
 #!/bin/bash
 # Redragon Audio Suite - Interactive Setup Wizard (Arch Linux only)
@@ -174,7 +142,15 @@ if ask_user "Enable redragon-control-daemon service now?" "y"; then
 fi
 echo ""
 
-echo "--- Step 2: Virtual Surround (7.1.4) ---"
+echo "--- Step 2: Desktop Widgets ---"
+echo "Widgets are installed for all desktop environments (GNOME, Cinnamon, KDE)."
+echo "You can enable/disable them manually:"
+echo "  - GNOME: Extensions app → Redragon HS Companion"
+echo "  - Cinnamon: Settings → Applets → Redragon HS Companion"
+echo "  - KDE: Right-click panel → Add Widgets → Redragon HS Companion"
+echo ""
+
+echo "--- Step 3: Virtual Surround (7.1.4) ---"
 echo "For virtual surround, you have two options:"
 echo "  1. Use virtual-surround-manager (RECOMMENDED) - GUI tool that handles everything"
 echo "  2. Manual configuration with Pipewire-DX-Utils (advanced)"
@@ -193,7 +169,7 @@ else
 fi
 echo ""
 
-echo "--- Step 3: Convolution EQ (optional) ---"
+echo "--- Step 4: Convolution EQ (optional) ---"
 echo "If you want to use EQ, you need a .wav file from AutoEq."
 echo "Go to https://autoeq.app, select your headphone, choose 'Convolution' as app."
 echo ""
@@ -211,15 +187,20 @@ if ask_user "Do you have a .wav EQ file?" "n"; then
 fi
 echo ""
 
-echo "--- Step 4: Noise Cancellation (optional) ---"
+echo "--- Step 5: Noise Cancellation (optional) ---"
 if ask_user "Install noise-suppression-for-voice?" "n"; then
     pacman -S noise-suppression-for-voice --noconfirm 2>/dev/null || echo "Failed to install. Please install manually."
 fi
 echo ""
 
-echo "--- Step 5: Echo Cancellation (optional) ---"
-if ask_user "Enable echo cancellation?" "n"; then
-    echo "To enable echo cancellation, you need to configure ec.conf manually."
+echo "--- Step 6: Pipewire-DX-Utils (advanced) ---"
+if ask_user "Install Pipewire-DX-Utils manual configuration files?" "n"; then
+    echo "Installing Pipewire-DX-Utils to /etc/pipewire..."
+    cd /usr/share/doc/redragon-audio-suite/ || exit 1
+    # We need to copy from the source, but it's not available at runtime.
+    # Instead, we'll install it during package build if user wants.
+    echo "  -> Please note: Pipewire-DX-Utils must be installed during package build."
+    echo "  -> To install, rebuild the package and select 'yes' when prompted."
 fi
 echo ""
 
@@ -240,9 +221,8 @@ EOF
     chmod +x "$pkgdir/usr/bin/redragon-audio-setup"
     echo "  -> Setup script installed to /usr/bin/redragon-audio-setup"
 
-    # ============================================
-    # PART 4: Documentation
-    # ============================================
+    # ---------- Documentation ----------
+    install -d "$pkgdir/usr/share/doc/redragon-audio-suite/"
     cat > "$pkgdir/usr/share/doc/redragon-audio-suite/QUICKSTART.md" << 'EOF'
 # Quick Start Guide for Redragon Audio Suite
 
