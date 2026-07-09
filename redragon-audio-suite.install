@@ -1,0 +1,74 @@
+# Post-installation script for Redragon Audio Suite
+
+post_install() {
+    echo ""
+    echo "=========================================="
+    echo "  Redragon Audio Suite Installed! 🎧"
+    echo "=========================================="
+    echo ""
+    echo "📌 Next steps:"
+    echo ""
+    echo "  1️⃣ Enable the control daemon service:"
+    echo "     systemctl --user enable --now redragon-control-daemon.service"
+    echo ""
+    echo "  2️⃣ Run the setup wizard to configure virtual surround:"
+    echo "     sudo redragon-audio-setup"
+    echo ""
+    echo "  3️⃣ Enable the filter-chain service (after running setup):"
+    echo "     systemctl --user enable --now filter-chain.service"
+    echo ""
+    echo "  4️⃣ Set 'Virtual Surround Sink' as default in pavucontrol"
+    echo ""
+    echo "📖 For more details, see:"
+    echo "     /usr/share/doc/redragon-audio-suite/QUICKSTART.md"
+    echo ""
+    echo "🔗 Useful resources:"
+    echo "     SOFA files: https://www.sofaconventions.org/mediawiki/index.php/Downloads"
+    echo "     HRTF DB:    https://airtable.com/appayGNkn3nSuXkaz/shruimhjdSakUPg2m"
+    echo "     AutoEq:     https://autoeq.app"
+    echo ""
+    echo "=========================================="
+    echo ""
+}
+
+post_upgrade() {
+    echo ""
+    echo "=========================================="
+    echo "  Redragon Audio Suite Updated! 🔄"
+    echo "=========================================="
+    echo ""
+    echo "If you encounter any issues, rerun the setup wizard:"
+    echo "  sudo redragon-audio-setup"
+    echo ""
+    echo "Check the changelog at:"
+    echo "  https://github.com/cristianocps/redragon-hs-companion"
+    echo ""
+}
+
+pre_remove() {
+    echo ""
+    echo "=========================================="
+    echo "  Removing Redragon Audio Suite"
+    echo "=========================================="
+    echo ""
+    echo "Stopping services..."
+    systemctl --user stop redragon-control-daemon.service 2>/dev/null || true
+    systemctl --user stop filter-chain.service 2>/dev/null || true
+    echo "✅ Services stopped"
+    echo ""
+}
+
+post_remove() {
+    echo ""
+    echo "=========================================="
+    echo "  Redragon Audio Suite Removed"
+    echo "=========================================="
+    echo ""
+    echo "If you want to completely remove all configuration files:"
+    echo "  rm -rf /etc/pipewire/filter-chain.conf.d/"
+    echo "  rm -rf /etc/pipewire/pipewire.conf.d/"
+    echo ""
+    echo "To also remove user data:"
+    echo "  rm -rf ~/.local/share/redragon-hs-companion/"
+    echo ""
+}
