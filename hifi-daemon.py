@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified audio daemon: volume sync + socket control for wireless headsets."""
+"""Unified audio daemon: wpctl-based volume control + PCM sync for wireless headsets."""
 
 import socket, os, sys, signal, time, json, re, subprocess, logging
 from pathlib import Path
@@ -16,14 +16,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("hifi-daemon")
 
-DEVICE_PATTERNS = [
-    r"[Hh]\d{3}", r"Wireless\s+headset", r"XiiSound", r"Weltrend",
+BRANDS = [
     r"Redragon", r"Logitech", r"HyperX", r"Razer", r"SteelSeries",
     r"Corsair", r"Sennheiser", r"Sony", r"JBL", r"Audio-Technica",
+    r"Bang", r"Marshall", r"Beats", r"Anker", r"Edifier",
+    r"XiiSound", r"Weltrend", r"[Hh]\d{3}",
 ]
 
 
-def _lc_env():
+def _env():
     e = os.environ.copy()
     e["LC_ALL"] = "C"
     e["LANG"] = "C"
@@ -31,102 +32,84 @@ def _lc_env():
 
 
 def _run(cmd):
-    return subprocess.run(cmd, capture_output=True, text=True, env=_lc_env())
+    return subprocess.run(cmd, capture_output=True, text=True, env=_env())
 
 
-class Headset:
+class AudioDevice:
+    """Wraps wpctl for modern PipeWire volume/device management."""
+
     def __init__(self):
-        self.card_id: Optional[str] = None
+        self.sink_id: Optional[str] = None
         self.device_name: str = "Headset"
-        self.analog: bool = False
+        self.node_name: str = ""
         self.last_set = 0.0
         self.debounce = 0.5
 
     def detect(self) -> bool:
-        try:
-            r = _run(["aplay", "-l"])
-            if r.returncode != 0:
-                return False
-            for line in r.stdout.splitlines():
-                if "card" not in line.lower():
-                    continue
-                for pat in DEVICE_PATTERNS:
-                    if re.search(pat, line, re.I):
-                        m = re.search(r"card (\d+):", line, re.I)
-                        if m:
-                            self.card_id = m.group(1)
-                            nm = re.search(r"\[([^\]]+)\]", line)
-                            self.device_name = nm.group(1) if nm else "Headset"
-                            self._detect_profile()
-                            log.info("Detected: %s (card %s)", self.device_name, self.card_id)
+        """Find wireless headset via wpctl."""
+        r = _run(["wpctl", "status"])
+        if r.returncode != 0:
+            return False
+
+        section = None
+        for line in r.stdout.splitlines():
+            stripped = line.strip()
+            if "Sinks:" in stripped:
+                section = "sink"
+                continue
+            elif "Sources:" in stripped or "Streams:" in stripped or stripped == "":
+                section = None
+                continue
+
+            if section == "sink" and re.match(r"\d+\.", stripped):
+                m = re.match(r"(\d+)\.\s+(.+?)(\s+\*)?$", stripped)
+                if m:
+                    for brand in BRANDS:
+                        if re.search(brand, m.group(2), re.I):
+                            self.sink_id = m.group(1)
+                            self.device_name = m.group(2).strip()
+                            # Get stable node.name
+                            inspect = _run(["wpctl", "inspect", self.sink_id])
+                            if inspect.returncode == 0:
+                                nm = re.search(r'node\.name\s*=\s*"([^"]+)"', inspect.stdout)
+                                if nm:
+                                    self.node_name = nm.group(1)
+                            log.info("Detected: %s (id %s)", self.device_name, self.sink_id)
                             return True
-            return False
-        except Exception:
-            return False
+        return False
 
-    def _detect_profile(self):
-        try:
-            r = _run(["pactl", "list", "cards"])
-            inside = False
-            for line in r.stdout.splitlines():
-                if any(p in line for p in ["XiiSound", "Weltrend", "Redragon", self.device_name]):
-                    inside = True
-                if inside and "Active Profile:" in line:
-                    self.analog = "analog" in line
-                    return
-        except Exception:
-            pass
-
-    def get_volumes(self) -> Tuple[Optional[int], Optional[int]]:
-        if not self.card_id:
-            return None, None
-        try:
-            r = _run(["amixer", "-c", self.card_id, "contents"])
-            if r.returncode != 0:
-                return None, None
-            v1 = v2 = None
-            lines = r.stdout.splitlines()
-            for i, line in enumerate(lines):
-                if "name='PCM Playback Volume'" not in line:
-                    continue
-                if i + 2 < len(lines) and "values=" in lines[i + 2]:
-                    m = re.search(r"values=(.+)", lines[i + 2])
-                    if m:
-                        val = int(m.group(1).strip().split(",")[0])
-                        if "index=1" in line:
-                            v2 = val
-                        else:
-                            v1 = val
-            return v1, v2
-        except Exception:
-            return None, None
+    def get_volume(self) -> Optional[float]:
+        if not self.sink_id:
+            return None
+        r = _run(["wpctl", "get-volume", self.sink_id])
+        if r.returncode != 0:
+            return None
+        m = re.search(r"Volume:\s*([\d.]+)", r.stdout)
+        return float(m.group(1)) if m else None
 
     def set_volume(self, vol: int, silent=False) -> bool:
-        if not self.card_id or not 0 <= vol <= 100:
+        if not self.sink_id or not 0 <= vol <= 100:
             return False
-        try:
-            if self.analog:
-                _run(["amixer", "-c", self.card_id, "set", "PCM", "100%"])
-                _run(["amixer", "-c", self.card_id, "cset", "numid=10", str(vol)])
-            else:
-                _run(["amixer", "-c", self.card_id, "set", "PCM", f"{vol}%"])
-                _run(["amixer", "-c", self.card_id, "cset", "numid=10", str(vol)])
+        # wpctl uses 0.0-1.5 scale
+        wp_vol = vol / 100.0
+        r = _run(["wpctl", "set-volume", self.sink_id, str(wp_vol)])
+        if r.returncode == 0:
             self.last_set = time.time()
             self._save_state(vol)
             return True
-        except Exception:
-            return False
+        return False
 
-    def sync_from_master(self) -> bool:
-        v1, v2 = self.get_volumes()
-        if v1 is None or v1 == v2:
+    def toggle_mute(self) -> bool:
+        if not self.sink_id:
             return False
-        try:
-            _run(["amixer", "-c", self.card_id, "cset", "numid=10", str(v1)])
-            self.last_set = time.time()
-            return True
-        except Exception:
+        r = _run(["wpctl", "set-mute", self.sink_id, "toggle"])
+        return r.returncode == 0
+
+    def set_default(self) -> bool:
+        if not self.sink_id:
             return False
+        r = _run(["wpctl", "set-default", self.sink_id])
+        return r.returncode == 0
 
     def should_debounce(self):
         return (time.time() - self.last_set) < self.debounce
@@ -135,7 +118,7 @@ class Headset:
         try:
             STATE_FILE.write_text(json.dumps({
                 "volume": vol, "device": self.device_name,
-                "card": self.card_id, "ts": time.time(),
+                "sink_id": self.sink_id, "ts": time.time(),
             }))
         except Exception:
             pass
@@ -152,7 +135,7 @@ class Headset:
 class Daemon:
     def __init__(self):
         self.running = True
-        self.hs = Headset()
+        self.dev = AudioDevice()
         self.vol_before_mute = None
         self.sock_path = f"{os.environ.get('XDG_RUNTIME_DIR', '/tmp')}/hifi-suite.sock"
         self.err_count = 0
@@ -163,8 +146,8 @@ class Daemon:
             return "ERR: empty"
         c = parts[0]
 
-        if not self.hs.card_id:
-            if not self.hs.detect():
+        if not self.dev.sink_id:
+            if not self.dev.detect():
                 return "ERR: no headset"
 
         if c == "set" and len(parts) == 2:
@@ -172,61 +155,48 @@ class Daemon:
                 vol = int(parts[1])
             except ValueError:
                 return "ERR: bad volume"
-            if self.hs.set_volume(vol, silent=True):
+            if self.dev.set_volume(vol, silent=True):
                 return f"OK: {vol}"
-            self.hs.card_id = None
-            if self.hs.detect() and self.hs.set_volume(vol, silent=True):
+            self.dev.sink_id = None
+            if self.dev.detect() and self.dev.set_volume(vol, silent=True):
                 return f"OK: {vol}"
             return "ERR: set failed"
 
         if c == "get":
-            v1, v2 = self.hs.get_volumes()
-            if v1 is None:
+            vol = self.dev.get_volume()
+            if vol is None:
                 return "ERR: read failed"
-            eff = v2 if self.hs.analog else v1
-            return f"OK: {eff}"
+            pct = int(vol * 100)
+            return f"OK: {pct}"
 
         if c == "status":
-            v1, v2 = self.hs.get_volumes()
-            return f"OK: device={self.hs.device_name} card={self.hs.card_id} v1={v1} v2={v2} analog={self.hs.analog}"
+            vol = self.dev.get_volume()
+            pct = int(vol * 100) if vol else "?"
+            return (f"OK: device={self.dev.device_name} id={self.dev.sink_id} "
+                    f"node={self.dev.node_name} volume={pct}%")
 
         if c == "mute":
-            v1, v2 = self.hs.get_volumes()
-            if v1 is None:
+            vol = self.dev.get_volume()
+            if vol is None:
                 return "ERR: read failed"
-            cur = v2 if self.hs.analog else v1
-            if cur == 0:
-                vol = self.vol_before_mute or 50
-                self.hs.set_volume(vol, silent=True)
+            if vol == 0:
+                restore = self.vol_before_mute or 0.5
+                self.dev.set_volume(int(restore * 100), silent=True)
                 self.vol_before_mute = None
-                return f"OK: unmuted {vol}"
-            self.vol_before_mute = cur
-            self.hs.set_volume(0, silent=True)
+                return f"OK: unmuted {int(restore * 100)}"
+            self.vol_before_mute = vol
+            self.dev.set_volume(0, silent=True)
             return "OK: muted"
+
+        if c == "default":
+            if self.dev.set_default():
+                return f"OK: default={self.dev.device_name}"
+            return "ERR: set default failed"
 
         if c == "ping":
             return "OK: pong"
 
         return f"ERR: unknown '{c}'"
-
-    def _sync_loop(self):
-        if self.hs.should_debounce():
-            return
-        if not self.hs.card_id:
-            if not self.hs.detect():
-                self.err_count += 1
-                return
-            self.err_count = 0
-        v1, v2 = self.hs.get_volumes()
-        if v1 is None:
-            self.err_count += 1
-            if self.err_count >= 3:
-                self.hs.card_id = None
-                self.err_count = 0
-            return
-        self.err_count = 0
-        if not self.hs.analog and v1 != v2:
-            self.hs.sync_from_master()
 
     def run(self):
         signal.signal(signal.SIGTERM, lambda *_: setattr(self, "running", False))
@@ -241,16 +211,15 @@ class Daemon:
         srv.settimeout(1.0)
         os.chmod(self.sock_path, 0o600)
 
-        if not self.hs.detect():
+        if not self.dev.detect():
             log.warning("No headset on startup, will auto-detect")
         else:
-            restored = self.hs.load_state()
+            restored = self.dev.load_state()
             if restored is not None:
-                self.hs.set_volume(restored, silent=True)
+                self.dev.set_volume(restored, silent=True)
                 log.info("Restored volume: %d%%", restored)
 
         log.info("Daemon started, socket: %s", self.sock_path)
-        tick = 0
         while self.running:
             try:
                 try:
@@ -263,9 +232,6 @@ class Daemon:
                     pass
             except Exception as e:
                 log.error("Socket error: %s", e)
-            tick += 1
-            if tick % 2 == 0:
-                self._sync_loop()
 
         srv.close()
         if os.path.exists(self.sock_path):

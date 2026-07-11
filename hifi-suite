@@ -1,29 +1,47 @@
 #!/bin/bash
-# hifi-suite — unified audio control CLI with zero-config
+# hifi-suite — unified audio control CLI (wpctl-based, zero-config)
 SOCK="${XDG_RUNTIME_DIR:-/tmp}/hifi-suite.sock"
-CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hifi-suite"
-PW_FILTER="/etc/pipewire/filter-chain.conf.d"
+PW_FILTER="${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/filter-chain.conf.d"
+WP_RULES="${XDG_CONFIG_HOME:-$HOME/.config}/wireplumber/wireplumber.conf.d"
 
 usage() {
-    cat <<EOF
+    cat <<'EOF'
 Usage: hifi-suite <command> [args]
 
 Volume:
-  hifi-suite vol <0-100>     Set volume
-  hifi-suite vol mute        Toggle mute
-  hifi-suite vol get         Get current volume
+  hifi-suite vol <0-100>       Set volume
+  hifi-suite vol <0-100>+      Relative increase
+  hifi-suite vol <0-100>-      Relative decrease
+  hifi-suite vol mute          Toggle mute
+  hifi-suite vol get           Get current volume
 
-Status:
-  hifi-suite status          Show device + effects info
+Devices:
+  hifi-suite devices           List all audio devices (wpctl)
+  hifi-suite default           Set headset as default output
 
-Effects (zero-config):
-  hifi-suite enable <surround|nc|eq|ec>
-  hifi-suite disable <surround|nc|eq|ec>
-  hifi-suite effects         List all effects and status
+Effects:
+  hifi-suite enable <nc|surround|eq|ec>
+  hifi-suite disable <nc|surround|eq|ec>
+  hifi-suite effects           List all effects and status
 
-Auto-setup:
-  hifi-suite auto             Auto-detect and configure everything
-  hifi-suite setup            Interactive first-run wizard
+Mic Preference:
+  hifi-suite mic-prefer <node.name> [priority]   Auto-prefer mic
+  hifi-suite mic-prefer-regex <pattern> [prio]   Regex match mic
+  hifi-suite mic-rules         List active mic rules
+  hifi-suite mic-unprefer      Remove mic preference rule
+
+Combined Output:
+  hifi-suite combine <name> <sink1> <sink2> [...]   Simultaneous output
+  hifi-suite combine-remove <name>                  Remove combined sink
+
+EasyEffects:
+  hifi-suite ee-list           List EasyEffects presets
+  hifi-suite ee-load <name>    Load an EasyEffects preset
+  hifi-suite ee-start          Start EasyEffects
+  hifi-suite ee-stop           Stop EasyEffects
+
+Auto:
+  hifi-suite auto              Auto-detect and configure everything
 
 Daemon:
   hifi-suite daemon start|stop|restart|status
@@ -32,10 +50,9 @@ EOF
 
 send() {
     if [ ! -S "$SOCK" ]; then
-        echo "Daemon not running. Starting..." >&2
         systemctl --user start hifi-daemon 2>/dev/null || \
             nohup python3 "$(dirname "$0")/hifi-daemon.py" &>/dev/null &
-        sleep 0.5
+        sleep 0.3
     fi
     printf '%s' "$1" | socat - "UNIX-CONNECT:$SOCK" 2>/dev/null && return 0
     printf '%s' "$1" | ncat -U "$SOCK" 2>/dev/null && return 0
@@ -55,7 +72,7 @@ s.close()
 PY
 }
 
-# Volume
+# ── Volume ────────────────────────────────────────────────────────────────
 cmd_vol() {
     local arg="${1:-}"
     case "$arg" in
@@ -73,120 +90,218 @@ cmd_vol() {
     esac
 }
 
-# Effects
+# ── Devices ───────────────────────────────────────────────────────────────
+cmd_devices() {
+    wpctl status 2>/dev/null || echo "wpctl not found — install pipewire"
+}
+
+cmd_default() { send "default"; }
+
+# ── Effects ───────────────────────────────────────────────────────────────
 cmd_enable() {
     local f="$1"
     local conf="$PW_FILTER/$f.conf"
-    local user_conf="$CONF_DIR/$f.conf"
+    mkdir -p "$PW_FILTER"
 
-    # Check if config exists
-    if [ ! -f "$conf" ] && [ ! -f "$user_conf" ]; then
-        # Generate minimal config
-        case "$f" in
-            nc)
-                local plugin="/usr/lib/ladspa/librnnoise_ladspa.so"
-                [ ! -f "$plugin" ] && plugin="/usr/lib64/ladspa/librnnoise_ladspa.so"
-                mkdir -p "$PW_FILTER"
-                cat > "$conf" <<NCEOF
+    case "$f" in
+        nc)
+            local plugin=""
+            for p in /usr/lib/ladspa/librnnoise_ladspa.so \
+                     /usr/lib64/ladspa/librnnoise_ladspa.so \
+                     /usr/lib/x86_64-linux-gnu/ladspa/librnnoise_ladspa.so; do
+                [ -f "$p" ] && plugin="$p" && break
+            done
+            if [ -z "$plugin" ]; then
+                echo "RNNoise plugin not found. Install: noise-suppression-for-voice" >&2
+                return 1
+            fi
+            cat > "$conf" <<NCEOF
 context.modules = [
     { name = libpipewire-module-filter-chain
         flags = [ nofail ]
         args = {
-            node.description = "RNNoise"
-            media.name       = "RNNoise"
+            node.description = "Noise Cancelling source (RNNoise)"
+            media.name       = "Noise Cancelling source"
             filter.graph = {
                 nodes = [
                     { type = ladspa name = rnnoise
                       plugin = "$plugin"
                       label  = noise_suppressor_mono
                       control = {
-                          "VAD Threshold (%)"          = 75.0
+                          "VAD Threshold (%)"          = 50.0
                           "VAD Grace Period (ms)"      = 200
                           "Retroactive VAD Grace (ms)" = 0
                       } }
                 ]
             }
             audio.rate = 48000
-            capture.props = { node.name = "capture.rnnoise_source" node.passive = true }
-            playback.props = { node.name = "output.rnnoise_source" media.class = Audio/Source }
+            capture.props = { node.name = "capture.rnnoise_source" node.passive = true audio.rate = 48000 }
+            playback.props = { node.name = "rnnoise_source" media.class = Audio/Source audio.rate = 48000 }
         }
     }
 ]
 NCEOF
-                ;;
-            *)
-                echo "No config template for: $f" >&2
-                echo "Create $user_conf manually or place a .conf in $PW_FILTER/" >&2
-                return 1 ;;
-        esac
-    fi
-
-    echo "Enabled: $f (restart pipewire or run 'hifi-suite daemon restart')"
+            ;;
+        *)
+            local tpl="/usr/share/hifi-suite/configs/$f.conf"
+            if [ -f "$tpl" ]; then
+                cp "$tpl" "$conf"
+            else
+                echo "No config for: $f" >&2; return 1
+            fi ;;
+    esac
+    systemctl --user restart pipewire wireplumber 2>/dev/null
+    echo "Enabled: $f"
 }
 
 cmd_disable() {
-    local f="$1"
-    local conf="$PW_FILTER/$f.conf"
-    rm -f "$conf" 2>/dev/null
-    echo "Disabled: $f (restart pipewire to apply)"
+    rm -f "$PW_FILTER/$1.conf" 2>/dev/null
+    systemctl --user restart pipewire wireplumber 2>/dev/null
+    echo "Disabled: $1"
 }
 
 cmd_effects() {
     echo "Effects:"
-    for f in surround surround714 nc eq ec; do
-        local status="off"
-        [ -f "$PW_FILTER/$f.conf" ] && status="ON"
-        printf "  %-12s %s\n" "$f" "$status"
+    for f in nc surround surround714 eq ec; do
+        [ -f "$PW_FILTER/$f.conf" ] && echo "  $f  ON" || echo "  $f  off"
     done
     echo ""
-    # EasyEffects status
-    if pgrep -x easyeffects >/dev/null 2>&1; then
-        echo "EasyEffects: running (may conflict with nc/eq/ec)"
-    else
-        echo "EasyEffects: not running"
-    fi
+    pgrep -x easyeffects >/dev/null 2>&1 && echo "EasyEffects: running" || echo "EasyEffects: not running"
 }
 
-# Auto-setup: zero-config
+# ── Mic Preference ────────────────────────────────────────────────────────
+cmd_mic_prefer() {
+    local node="$1" prio="${2:-2000}"
+    mkdir -p "$WP_RULES"
+    cat > "$WP_RULES/51-hifi-mic-priority.conf" <<EOF
+monitor.alsa.rules = [
+  {
+    matches = [ { node.name = "$node" } ]
+    actions = {
+      update-props = {
+        priority.session = $prio
+        priority.driver  = $prio
+      }
+    }
+  }
+]
+EOF
+    systemctl --user restart wireplumber 2>/dev/null
+    echo "Mic preferred: $node (priority $prio)"
+}
+
+cmd_mic_prefer_regex() {
+    local pattern="$1" prio="${2:-2000}"
+    mkdir -p "$WP_RULES"
+    cat > "$WP_RULES/51-hifi-mic-priority.conf" <<EOF
+monitor.alsa.rules = [
+  {
+    matches = [ { node.name = "~$pattern" } ]
+    actions = {
+      update-props = {
+        priority.session = $prio
+        priority.driver  = $prio
+      }
+    }
+  }
+]
+EOF
+    systemctl --user restart wireplumber 2>/dev/null
+    echo "Mic preferred (regex): $pattern (priority $prio)"
+}
+
+cmd_mic_rules() {
+    echo "Active mic rules:"
+    for f in "$WP_RULES"/*.conf; do
+        [ -f "$f" ] && grep -q "priority.session" "$f" 2>/dev/null && echo "  $(basename "$f")"
+    done
+}
+
+cmd_mic_unprefer() {
+    rm -f "$WP_RULES/51-hifi-mic-priority.conf" 2>/dev/null
+    systemctl --user restart wireplumber 2>/dev/null
+    echo "Mic preference removed"
+}
+
+# ── Combined Sink ─────────────────────────────────────────────────────────
+cmd_combine() {
+    local name="$1"; shift
+    mkdir -p "$(dirname "$PW_FILTER")"
+    local matches=""
+    for sink in "$@"; do
+        matches+="                        { node.name = \"$sink\" }
+"
+    done
+    cat > "$(dirname "$PW_FILTER")/51-combine-$name.conf" <<EOF
+context.modules = [
+  {   name = libpipewire-module-combine-stream
+      args = {
+          combine.mode = sink
+          node.name    = "combined_$name"
+          node.description = "$name"
+          combine.props = { audio.position = [ FL FR ] }
+          stream.props = {}
+          stream.rules = [
+              {
+                  matches = [
+$matches
+                  ]
+                  actions = { create-stream = {} }
+              }
+          ]
+      }
+  }
+]
+EOF
+    systemctl --user restart pipewire wireplumber 2>/dev/null
+    echo "Combined sink: $name (from: $*)"
+}
+
+cmd_combine_remove() {
+    rm -f "$(dirname "$PW_FILTER")/51-combine-$1.conf" 2>/dev/null
+    systemctl --user restart pipewire wireplumber 2>/dev/null
+    echo "Removed combined sink: $1"
+}
+
+# ── EasyEffects ───────────────────────────────────────────────────────────
+cmd_ee_list() {
+    local dir="${XDG_CONFIG_HOME:-$HOME/.config}/easyeffects/input"
+    echo "EasyEffects input presets:"
+    [ -d "$dir" ] && for f in "$dir"/*.json; do
+        [ -f "$f" ] && echo "  $(basename "$f" .json)"
+    done || echo "  (none)"
+    dir="${XDG_CONFIG_HOME:-$HOME/.config}/easyeffects/output"
+    echo "EasyEffects output presets:"
+    [ -d "$dir" ] && for f in "$dir"/*.json; do
+        [ -f "$f" ] && echo "  $(basename "$f" .json)"
+    done || echo "  (none)"
+}
+
+cmd_ee_load() { easyeffects --load-preset "$1" 2>/dev/null && echo "Loaded: $1"; }
+cmd_ee_start() { systemctl --user start easyeffects 2>/dev/null && echo "EasyEffects started"; }
+cmd_ee_stop() { systemctl --user stop easyeffects 2>/dev/null && echo "EasyEffects stopped"; }
+
+# ── Auto ──────────────────────────────────────────────────────────────────
 cmd_auto() {
-    echo "Detecting headset..."
+    echo "Auto-configuring..."
+    # Detect headset
     local status=$(send "status" 2>/dev/null)
     if [[ "$status" == *device=* ]]; then
-        local device=$(echo "$status" | sed -n 's/.*device=\([^ ]*\).*/\1/p')
-        echo "  Found: $device"
+        echo "  Headset: $(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')"
     else
-        echo "  No headset detected. Connect a wireless headset and retry."
+        echo "  No headset detected. Connect and retry."
         return 1
     fi
-
-    # Auto-enable NC if plugin available
-    local plugin="/usr/lib/ladspa/librnnoise_ladspa.so"
-    [ ! -f "$plugin" ] && plugin="/usr/lib64/ladspa/librnnoise_ladspa.so"
-    if [ -f "$plugin" ]; then
-        if [ ! -f "$PW_FILTER/nc.conf" ]; then
-            cmd_enable nc
-            echo "  Auto-enabled: noise cancellation"
-        fi
-    fi
-
+    # Auto-enable NC
+    cmd_enable nc 2>/dev/null
     # Start daemon
     cmd_daemon start 2>/dev/null
-
-    echo ""
-    echo "Setup complete. Run 'hifi-suite effects' to see status."
+    echo "Done. Run 'hifi-suite effects' to see status."
 }
 
-cmd_setup() {
-    mkdir -p "$CONF_DIR" "$PW_FILTER"
-    echo "Config: $CONF_DIR"
-    echo "PipeWire filters: $PW_FILTER"
-    echo "Run 'hifi-suite auto' for zero-config setup."
-}
-
-# Daemon
+# ── Daemon ────────────────────────────────────────────────────────────────
 cmd_daemon() {
-    local action="${1:-start}"
-    case "$action" in
+    case "${1:-start}" in
         start)
             systemctl --user start hifi-daemon 2>/dev/null \
                 || nohup python3 "$(dirname "$0")/hifi-daemon.py" &>/dev/null &
@@ -201,22 +316,32 @@ cmd_daemon() {
         status)
             systemctl --user status hifi-daemon 2>/dev/null \
                 || pgrep -f hifi-daemon.py >/dev/null && echo "Running" || echo "Stopped" ;;
-        *) echo "Usage: hifi-suite daemon {start|stop|restart|status}" >&2; return 1 ;;
     esac
 }
 
-# Main
+# ── Main ──────────────────────────────────────────────────────────────────
 [ $# -eq 0 ] && { usage; exit 0; }
 
 case "$1" in
-    vol|volume) shift; cmd_vol "$@" ;;
-    status) send "status" ;;
-    enable) shift; cmd_enable "$1" ;;
-    disable) shift; cmd_disable "$1" ;;
-    effects) cmd_effects ;;
-    auto) cmd_auto ;;
-    setup) cmd_setup ;;
-    daemon) shift; cmd_daemon "$@" ;;
+    vol|volume)     shift; cmd_vol "$@" ;;
+    status)         send "status" ;;
+    devices)        cmd_devices ;;
+    default)        cmd_default ;;
+    enable)         shift; cmd_enable "$1" ;;
+    disable)        shift; cmd_disable "$1" ;;
+    effects)        cmd_effects ;;
+    mic-prefer)     shift; cmd_mic_prefer "$@" ;;
+    mic-prefer-regex) shift; cmd_mic_prefer_regex "$@" ;;
+    mic-rules)      cmd_mic_rules ;;
+    mic-unprefer)   cmd_mic_unprefer ;;
+    combine)        shift; cmd_combine "$@" ;;
+    combine-remove) shift; cmd_combine_remove "$@" ;;
+    ee-list)        cmd_ee_list ;;
+    ee-load)        shift; cmd_ee_load "$@" ;;
+    ee-start)       cmd_ee_start ;;
+    ee-stop)        cmd_ee_stop ;;
+    auto)           cmd_auto ;;
+    daemon)         shift; cmd_daemon "$@" ;;
     help|-h|--help) usage ;;
-    *) echo "Unknown command: $1" >&2; usage; exit 1 ;;
+    *) echo "Unknown: $1" >&2; usage; exit 1 ;;
 esac
