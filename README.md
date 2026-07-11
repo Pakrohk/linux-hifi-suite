@@ -17,6 +17,7 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#effects">Effects</a> ·
+  <a href="#custom-profiles">Profiles</a> ·
   <a href="#desktop-widgets">Widgets</a> ·
   <a href="#compatible-headsets">Headsets</a>
 </p>
@@ -35,6 +36,7 @@ Wireless headsets on Linux have fragmented audio control:
 - Noise cancellation needs LADSPA plugins + config files
 - Each desktop environment has its own widget — none work cross-DE
 - EasyEffects exists but doesn't auto-configure
+- No way to save per-headset settings
 
 ### The Solution
 
@@ -54,15 +56,17 @@ hifi-suite effects       # See what's active
 
 | Feature | Description |
 |---------|-------------|
-| **Auto-detection** | Detects any wireless headset via `wpctl` — not just Redragon |
+| **Auto-detection** | Detects any wireless headset via `wpctl` |
 | **Zero-config** | `hifi-suite auto` configures everything on first run |
 | **Volume control** | Set, mute, relative (+/-), software gain up to 150% |
 | **Virtual surround** | 7.1 and 7.1.4 via PipeWire SOFA spatializer |
-| **Noise cancellation** | RNNoise LADSPA filter chain, auto-detected plugin path |
+| **Noise cancellation** | RNNoise virtual mic — select as input, noise gone |
 | **Convolution EQ** | Apply AutoEq `.wav` files as PipeWire filter chains |
 | **Echo cancellation** | PipeWire `module-echo-cancel` for speaker leakage |
 | **Combined sinks** | Play to speakers + headset simultaneously |
 | **Mic preference rules** | WirePlumber auto-select preferred mic on connect |
+| **Custom profiles** | Per-headset JSON settings (EQ, SOFA, NC, volume) |
+| **File recommendations** | Best download sites for your specific headset model |
 | **EasyEffects compat** | Detects conflicts, manages presets via CLI |
 | **3 DE widgets** | KDE Plasma 6, GNOME Shell 46+, Cinnamon |
 | **Systemd daemon** | Auto-start, persistent volume, socket-based control |
@@ -100,7 +104,8 @@ makepkg -si
 
 | Optional | Purpose |
 |----------|---------|
-| `noise-suppression-for-voice` | RNNoise LADSPA plugin |
+| `noise-suppression-for-voice` | RNNoise LADSPA plugin (recommended) |
+| `virtual-surround-manager` | Virtual 7.1/5.1 surround with HeSuVi WAV (recommended) |
 | `easyeffects` | GUI audio effects |
 | `realtime-privileges` | Low-latency audio |
 | `plasma-desktop` | KDE Plasma widget |
@@ -167,7 +172,7 @@ hifi-suite default         # Set headset as default output
 hifi-suite mic-prefer "alsa_input.usb-Jabra_Evolve2_85.mono-fallback"
 
 # Regex match (e.g. any USB mic)
-hifi-suite mic-prefer-regex "alsa_input.usb-*" 
+hifi-suite mic-prefer-regex "alsa_input.usb-*"
 
 # List active rules
 hifi-suite mic-rules
@@ -197,6 +202,23 @@ hifi-suite ee-start        # Start EasyEffects
 hifi-suite ee-stop         # Stop EasyEffects
 ```
 
+### Custom Profiles
+
+```bash
+hifi-suite profile list        # List custom headset profiles
+hifi-suite profile show        # Show profile for detected headset
+hifi-suite profile show "AULA G7 Pro 2026"  # Show specific profile
+hifi-suite profile create      # Create new profile (interactive)
+hifi-suite profile delete "AULA G7 Pro 2026" # Delete profile
+```
+
+### File Recommendations
+
+```bash
+hifi-suite recommend        # Auto-detect headset and recommend files
+hifi-suite recommend "AULA G7 Pro 2026"  # Recommend for specific model
+```
+
 ### Daemon
 
 ```bash
@@ -212,14 +234,14 @@ hifi-suite daemon status   # Check if running
 
 ### Noise Cancellation (RNNoise)
 
-Automatic noise suppression using the RNNoise LADSPA plugin. Works for:
-- Microphone input (voice calls, recording)
-- System-wide noise gate
+Automatic noise suppression using the RNNoise LADSPA plugin.
 
 ```bash
 hifi-suite enable nc       # Enable
 hifi-suite disable nc      # Disable
 ```
+
+**How it works:** Creates a virtual microphone source called "Noise Cancelling Mic". Select it as your input in any app — all noise is automatically removed.
 
 The plugin path is auto-detected across distributions:
 - `/usr/lib/ladspa/librnnoise_ladspa.so` (Arch, Fedora)
@@ -230,14 +252,15 @@ The plugin path is auto-detected across distributions:
 
 7.1 and 7.1.4 virtual surround using PipeWire SOFA spatializer.
 
-**Requirements:**
-- A `.sofa` HRIR file (download from [SOFA Conventions](http://sofacoustics.org/data) — ARI database recommended)
-- PipeWire built with `libmysofa` support
-
 ```bash
 hifi-suite enable surround    # 7.1
 hifi-suite enable surround714 # 7.1.4
 ```
+
+**Requirements:**
+- A `.sofa` HRIR file (download from [SOFA Conventions](http://sofacoustics.org/data) — ARI database recommended)
+- PipeWire built with `libmysofa` support
+- Or: [virtual-surround-manager](https://github.com/Berny23/virtual-surround-manager) (recommended — uses HeSuVi WAV, no config needed)
 
 > **Note:** Fedora needs `pipewire-module-filter-chain-sofa`. Ubuntu does not build PipeWire with libmysofa.
 
@@ -260,6 +283,59 @@ hifi-suite enable ec
 ```
 
 Edit the config to set your actual microphone and output device node names.
+
+---
+
+## Custom Profiles
+
+Save per-headset settings as JSON files at `~/.config/pipewire/hifi-suite/`.
+
+### Profile Format
+
+```json
+{
+  "name": "AULA G7 Pro 2026",
+  "brand": "Aula",
+  "eq_wav": "~/Downloads/aula-g7-pro-eq.wav",
+  "sofa_file": "~/Resources/hrir-generic.sofa",
+  "nc_threshold": 50,
+  "recommended_volume": 75,
+  "notes": "Budget gaming headset with surprisingly good soundstage"
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Headset name (used as filename) |
+| `brand` | string | Brand name |
+| `eq_wav` | string | Path to EQ `.wav` file |
+| `sofa_file` | string | Path to HRIR `.sofa` file |
+| `nc_threshold` | number | RNNoise VAD threshold (0-100) |
+| `recommended_volume` | number | Optimal volume level (0-100) |
+| `notes` | string | User notes |
+
+### How It Works
+
+1. `hifi-suite profile create` — interactive profile creation
+2. `hifi-suite recommend` — shows download sites + uses your profile
+3. `hifi-suite enable eq` — auto-uses `eq_wav` from profile if set
+4. `hifi-suite enable surround` — auto-uses `sofa_file` from profile if set
+
+**Priority:** Custom JSON > Brand defaults > Generic fallback
+
+### Download Sources
+
+| Type | Site | Notes |
+|------|------|-------|
+| **EQ WAV** | [autoeq.app](https://autoeq.app) | 6033+ headphones, select "Convolution" format |
+| **EQ Source** | [github.com/jaakkopasanen/AutoEq](https://github.com/jaakkopasanen/AutoEq) | 16k+ stars, measurements from oratory1990, crinacle, Rtings |
+| **SOFA HRIR** | [sofacoustics.org/data](http://sofacoustics.org/data) | Official: worldwide HRTFs, BRIRs |
+| **ARI Database** | [sofacoustics.org/data/database/ari](http://sofacoustics.org/data/database/ari) | 220+ listeners, best coverage |
+| **CIPIC** | [sofacoustics.org/data/database/cipic](http://sofacoustics.org/data/database/cipic) | 45 listeners, anthropometric data |
+| **MIT-KEMAR** | [sofacoustics.org/data/database/mit](http://sofacoustics.org/data/database/mit) | Classic dummy head, reference HRTFs |
+| **HUTUBS** | [sofacoustics.org/data/database/hutubs/](http://sofacoustics.org/data/database/hutubs/) | 96 listeners, 3D head models |
 
 ---
 
@@ -298,6 +374,7 @@ HiFi Suite auto-detects any wireless headset. Tested with:
 
 | Brand | Models |
 |-------|--------|
+| Aula | G7 Pro 2026, F2026 |
 | Redragon | H878, H848, H510 |
 | Logitech | G Pro X, G733, G935 |
 | HyperX | Cloud II, Cloud Alpha, Cloud Orbit |
@@ -318,7 +395,7 @@ HiFi Suite auto-detects any wireless headset. Tested with:
 ```
 ┌─────────────────────────────────────────────────┐
 │                   hifi-suite                    │
-│              (CLI / Widget / Extension)         │
+│         (CLI / Widget / Extension / Profile)    │
 ├─────────────────────────────────────────────────┤
 │                                                 │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
@@ -342,6 +419,10 @@ HiFi Suite auto-detects any wireless headset. Tested with:
 │  │  │      │ │chain │ │ RN │ │sink      │   │   │
 │  │  └──────┘ └──────┘ └────┘ └──────────┘   │   │
 │  └──────────────────────────────────────────┘   │
+│                                                 │
+│  ~/.config/pipewire/hifi-suite/                 │
+│  ├── AULA G7 Pro 2026.json  (custom profile)   │
+│  └── Redragon H888.json     (custom profile)   │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -352,7 +433,7 @@ HiFi Suite auto-detects any wireless headset. Tested with:
 ```
 linux-hifi-suite/
 ├── hifi-daemon.py          # Unified daemon (volume sync + socket control)
-├── hifi_pipewire.py        # PipeWire integration (wpctl, filters, rules)
+├── hifi_pipewire.py        # PipeWire integration (wpctl, filters, rules, profiles)
 ├── hifi-suite              # CLI entry point
 ├── hifi-daemon.service     # Systemd user service
 ├── hifi-suite.install      # Pacman install hooks
