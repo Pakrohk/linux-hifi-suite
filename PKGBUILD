@@ -4,7 +4,7 @@ pkgver=1.0.0
 pkgrel=1
 pkgdesc="Audio suite for wireless headsets: volume control, surround, noise cancellation, EQ"
 arch=('any')
-url="https://github.com/redragon-audio-suite"
+url="https://github.com/Pakrohk/linux-hifi-suite"
 license=('MIT')
 depends=('python' 'alsa-utils' 'pipewire' 'pipewire-alsa' 'pipewire-pulse' 'socat')
 makedepends=('git')
@@ -18,8 +18,12 @@ optdepends=(
     'cinnamon: Cinnamon applet'
 )
 install="hifi-suite.install"
-provides=('hifi-suite')
-conflicts=('hifi-suite')
+provides=('hifi-suite' 'redragon-audio-suite')
+conflicts=('hifi-suite'
+           'redragon-audio-suite-git'
+           'redragon-hs-companion'
+           'redragon-hs-companion-git')
+replaces=('redragon-audio-suite-git')
 source=('hifi-daemon.py' 'hifi_pipewire.py' 'hifi-suite' 'hifi-daemon.service'
         'plasma-widget' 'gnome-extension' 'cinnamon-applet' 'configs')
 md5sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
