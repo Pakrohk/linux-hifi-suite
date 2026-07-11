@@ -161,6 +161,38 @@ def _find_sofa_file() -> Optional[str]:
     return None
 
 
+def virtual_surround_manager_installed() -> bool:
+    """Check if virtual-surround-manager is installed."""
+    r = _run(["which", "virtual-surround-manager"])
+    if r.returncode == 0:
+        return True
+    # Check Flatpak
+    r = _run(["flatpak", "list", "--app"])
+    return "virtual_surround_manager" in r.stdout.lower() if r.returncode == 0 else False
+
+
+def virtual_surround_manager_running() -> bool:
+    r = _run(["pgrep", "-x", "virtual-surround-manager"])
+    return r.returncode == 0
+
+
+def enable_vsm_surround() -> bool:
+    """Launch virtual-surround-manager for GUI-based surround setup.
+
+    VSM uses PipeWire C API directly — no config files needed.
+    User selects a HeSuVi WAV preset in the GUI. Done.
+    """
+    if not virtual_surround_manager_installed():
+        print("virtual-surround-manager not found.")
+        print("Install: yay -S virtual-surround-manager")
+        print("Or: flatpak install flathub de.berny23.virtual_surround_manager")
+        return False
+
+    # Launch in background
+    _run(["virtual-surround-manager", "&"])
+    return True
+
+
 def _restart_pw():
     _run(["systemctl", "--user", "restart", "pipewire", "wireplumber"])
 
@@ -229,15 +261,23 @@ def disable_nc() -> bool:
 # ── Surround: Virtual Surround Sink ──────────────────────────────────────
 
 def enable_surround(channels: int = 8) -> bool:
-    """Create a virtual surround sink.
+    """Enable virtual surround.
 
-    After enabling, select "HiFi Surround" as your output.
-    Spatial audio is applied automatically via SOFA HRIR.
+    Strategy:
+    1. If virtual-surround-manager is installed → launch it (best UX)
+    2. If SOFA file available → create PipeWire filter chain
+    3. Otherwise → tell user what to do
     """
+    # Strategy 1: virtual-surround-manager (best UX, uses PipeWire C API directly)
+    if virtual_surround_manager_installed():
+        return enable_vsm_surround()
+
+    # Strategy 2: SOFA file → PipeWire filter chain
     sofa = _find_sofa_file()
     if not sofa:
-        print("SOFA file not found. Download from https://www.audioease.com/sofa/")
-        print("Place at ~/Resources/hrir.sofa")
+        print("No surround method available.")
+        print("Option A (recommended): yay -S virtual-surround-manager")
+        print("Option B: Download HRIR .sofa to ~/Resources/hrir.sofa")
         return False
 
     FILTER_DIR.mkdir(parents=True, exist_ok=True)
@@ -600,7 +640,13 @@ def easyeffects_start():
 # ── Auto-Configuration ───────────────────────────────────────────────────
 
 def auto_configure() -> Dict[str, str]:
-    """Detect hardware, create all virtual profiles. Zero-config."""
+    """Detect hardware, create all virtual profiles. Zero-config.
+
+    What gets enabled automatically:
+    - NC: Always (if RNNoise plugin available) → creates virtual mic
+    - Surround: If virtual-surround-manager installed → launch GUI
+    - Default input: Set to NC mic if created
+    """
     applied = {}
 
     headset = find_wireless_headset()
@@ -610,11 +656,13 @@ def auto_configure() -> Dict[str, str]:
     # Auto-enable NC (virtual mic with noise cancellation)
     if _find_rnnoise_plugin():
         if enable_nc():
-            applied["nc"] = "enabled (select 'Noise Cancelling Mic' as input)"
+            applied["nc"] = "Noise Cancelling Mic created"
+            applied["nc_usage"] = "Select 'Noise Cancelling Mic' as input in your app"
+
+    # Auto-restart PipeWire to pick up virtual sources
+    _run(["systemctl", "--user", "restart", "pipewire", "wireplumber"])
 
     # Auto-set NC mic as default input
-    # After PipeWire restart, find the virtual source and set it default
-    _run(["systemctl", "--user", "restart", "pipewire", "wireplumber"])
     sources = [d for d in list_audio_devices() if d["type"] == "source"]
     for src in sources:
         if "hifi_rnnoise" in src["name"].lower() or "noise cancelling" in src["name"].lower():
@@ -622,8 +670,14 @@ def auto_configure() -> Dict[str, str]:
             applied["default_input"] = src["name"]
             break
 
+    # Check surround availability
+    if virtual_surround_manager_installed():
+        applied["surround"] = "virtual-surround-manager available (run: hifi-suite enable surround)"
+    else:
+        applied["surround"] = "install virtual-surround-manager for 7.1/5.1 surround"
+
     if easyeffects_running():
-        applied["easyeffects"] = "running (may conflict with nc/eq/ec)"
+        applied["easyeffects"] = "running"
 
     return applied
 

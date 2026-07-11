@@ -9,9 +9,9 @@ license=('MIT')
 depends=('python' 'alsa-utils' 'pipewire' 'pipewire-alsa' 'pipewire-pulse' 'socat')
 makedepends=('git')
 optdepends=(
-    'noise-suppression-for-voice: RNNoise noise cancellation'
-    'easyeffects: GUI audio effects'
-    'virtual-surround-manager: GUI for HeSuVi .wav files'
+    'noise-suppression-for-voice: RNNoise LADSPA plugin (recommended for NC)'
+    'easyeffects: GUI audio effects (EQ, compressor, limiter)'
+    'virtual-surround-manager: Virtual 7.1/5.1 surround with HeSuVi WAV (recommended for surround)'
     'realtime-privileges: low-latency audio'
     'gnome-shell: GNOME Shell extension'
     'plasma-desktop: KDE Plasma widget'

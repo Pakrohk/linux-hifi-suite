@@ -148,6 +148,20 @@ NCEOF
             echo "Select it as your input source — noise is auto-removed."
             ;;
         surround|surround714)
+            # Try virtual-surround-manager first (best UX)
+            if command -v virtual-surround-manager &>/dev/null; then
+                echo "Launching virtual-surround-manager..."
+                echo "Select a HeSuVi WAV preset in the GUI. Done."
+                virtual-surround-manager &
+                return 0
+            fi
+            # Check Flatpak
+            if flatpak list --app 2>/dev/null | grep -qi virtual_surround_manager; then
+                echo "Launching virtual-surround-manager (Flatpak)..."
+                flatpak run de.berny23.virtual_surround_manager &
+                return 0
+            fi
+            # Fallback: SOFA filter chain
             local tpl="/usr/share/hifi-suite/configs/$f.conf"
             if [ -f "$tpl" ]; then
                 cp "$tpl" "$PW_FILTER/$f.conf"
@@ -155,7 +169,9 @@ NCEOF
                 echo "Created virtual surround sink."
                 echo "Select it as your output — spatial audio is automatic."
             else
-                echo "SOFA file needed. Download from https://www.audioease.com/sofa/" >&2
+                echo "Surround: install virtual-surround-manager (recommended):" >&2
+                echo "  yay -S virtual-surround-manager" >&2
+                echo "  or: flatpak install flathub de.berny23.virtual_surround_manager" >&2
                 return 1
             fi ;;
         eq)
@@ -313,20 +329,53 @@ cmd_ee_stop() { systemctl --user stop easyeffects 2>/dev/null && echo "EasyEffec
 
 # ── Auto ──────────────────────────────────────────────────────────────────
 cmd_auto() {
-    echo "Auto-configuring..."
+    echo "=== HiFi Suite Auto-Setup ==="
+    echo ""
+
     # Detect headset
     local status=$(send "status" 2>/dev/null)
     if [[ "$status" == *device=* ]]; then
-        echo "  Headset: $(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')"
+        echo "Headset: $(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')"
     else
-        echo "  No headset detected. Connect and retry."
+        echo "No headset detected. Connect and retry."
         return 1
     fi
-    # Auto-enable NC
+
+    # Auto-enable NC (creates virtual mic with noise cancellation)
+    echo ""
+    echo "--- Noise Cancellation ---"
     cmd_enable nc 2>/dev/null
+
+    # Check surround
+    echo ""
+    echo "--- Surround Sound ---"
+    if command -v virtual-surround-manager &>/dev/null; then
+        echo "virtual-surround-manager: installed"
+        echo "  Run 'hifi-suite enable surround' to launch GUI"
+    elif flatpak list --app 2>/dev/null | grep -qi virtual_surround_manager; then
+        echo "virtual-surround-manager: installed (Flatpak)"
+        echo "  Run 'hifi-suite enable surround' to launch GUI"
+    else
+        echo "virtual-surround-manager: not installed"
+        echo "  Install: yay -S virtual-surround-manager"
+    fi
+
     # Start daemon
+    echo ""
+    echo "--- Daemon ---"
     cmd_daemon start 2>/dev/null
-    echo "Done. Run 'hifi-suite effects' to see status."
+
+    echo ""
+    echo "=== Done ==="
+    echo ""
+    echo "What was set up:"
+    echo "  - Virtual mic 'Noise Cancelling Mic' → select as input in your app"
+    echo "  - Daemon running → volume sync active"
+    echo ""
+    echo "Next steps:"
+    echo "  - For surround: hifi-suite enable surround"
+    echo "  - For EQ: hifi-suite enable eq"
+    echo "  - For all effects: hifi-suite effects"
 }
 
 # ── Daemon ────────────────────────────────────────────────────────────────
