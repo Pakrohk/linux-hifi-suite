@@ -231,7 +231,7 @@ The plugin path is auto-detected across distributions:
 7.1 and 7.1.4 virtual surround using PipeWire SOFA spatializer.
 
 **Requirements:**
-- A `.sofa` HRIR file (download from [Audio Ease](https://www.audioease.com/sofa/))
+- A `.sofa` HRIR file (download from [SOFA Conventions](http://sofacoustics.org/data) — ARI database recommended)
 - PipeWire built with `libmysofa` support
 
 ```bash
@@ -249,7 +249,7 @@ Apply EQ curves from [AutoEq](https://autoeq.app) as PipeWire filter chains.
 hifi-suite enable eq
 ```
 
-Place your `.wav` EQ file at `~/.config/pipewire/filter-chain.conf.d/eq.conf` and edit the `filename` path.
+Place your `.wav` EQ file at `~/.config/hifi-suite/eq.wav`. AutoEq produces settings for all types of equalizer apps — select "Convolution" format for PipeWire.
 
 ### Echo Cancellation
 

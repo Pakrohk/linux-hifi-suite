@@ -206,80 +206,84 @@ HEADSET_SOURCES = {
         "eq_url": "https://autoeq.app",
         "eq_search": "Redragon H{model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file (generic HRTF works well)",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI (220+ listeners) or CIPIC (45 listeners) — generic HRTF works well",
     },
     "logitech": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Logitech {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "G Pro X has good built-in spatial. For custom: download .sofa",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "G Pro X has good built-in spatial. For custom: ARI database",
     },
     "hyperx": {
         "eq_url": "https://autoeq.app",
         "eq_search": "HyperX {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI or MIT-KEMAR database",
     },
     "razer": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Razer {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI or CIPIC database",
     },
     "steelseries": {
         "eq_url": "https://autoeq.app",
         "eq_search": "SteelSeries {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI database (220+ listeners, best coverage)",
     },
     "corsair": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Corsair {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI or CIPIC database",
     },
     "sennheiser": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Sennheiser {model}",
-        "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Sennheiser has great HRTF data available",
+        "eq_note": "HD 650, HD 800, etc. well supported. Search your model.",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "Sennheiser has great HRTF data. ARI database recommended.",
     },
     "sony": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Sony {model}",
-        "eq_note": "WH-1000XM4/XM5 are well supported. Search your model.",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "eq_note": "WH-1000XM4/XM5 well supported. Search your model.",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI or HUTUBS database (96 listeners with 3D head models)",
     },
     "jbl": {
         "eq_url": "https://autoeq.app",
         "eq_search": "JBL {model}",
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI or CIPIC database",
     },
     "audio-technica": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Audio-Technica {model}",
         "eq_note": "ATH-M50x, ATH-G1 well supported. Search your model.",
-        "sofa_url": "https://www.audioease.com/sofa/",
-        "sofa_note": "Download any HRIR .sofa file",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "ARI database recommended",
     },
 }
 
-# Additional HRTF databases
+# HRTF databases from sofacoustics.org
 HRTF_DATABASES = [
-    ("Aalto Databases", "https://aarikka.fi/sofa/", "Free SOFA files from Aalto University"),
-    ("CIPIC HRTF", "https://www.ece.ucdavis.edu/cipic/spatial-sound/", "Classic HRTF database"),
-    ("MIT KEMAR", "https://sound.media.mit.edu/KEMAR.html", "MIT measurement data"),
-    ("Oliver Thiergard", "https://github.com/chmod222/Cross-Ears-HRTF", "GitHub: free SOFA collection"),
+    ("SOFA Main Repository", "http://sofacoustics.org/data", "Official: worldwide HRTFs, BRIRs, HpIRs"),
+    ("ARI Database", "http://sofacoustics.org/data/database/ari", "220+ human listeners, in-the-ear HRTFs"),
+    ("CIPIC", "http://sofacoustics.org/data/database/cipic", "45 listeners, anthropometric data"),
+    ("MIT-KEMAR", "http://sofacoustics.org/data/database/mit", "Classic dummy head, reference HRTFs"),
+    ("HUTUBS", "http://sofacoustics.org/data/database/hutubs/", "96 listeners, 3D head models, HpIRs"),
+    ("Aachen", "http://sofacoustics.org/data/database/aachen", "48 listeners, 3D ear models"),
+    ("3D3A Princeton", "https://sofacoustics.org/data/database/3d3a/", "38 subjects, 3D head/torso scans"),
+    ("SS2 (Meta)", "https://sofacoustics.org/data/database/ss2/", "78 listeners, newest database"),
 ]
 
 
@@ -311,18 +315,20 @@ def print_headset_sources(headset_name: str):
     """Print download recommendations for a headset."""
     src = get_headset_sources(headset_name)
     print(f"\nRecommended files for: {headset_name}")
-    print("=" * 50)
+    print("=" * 60)
     print(f"\nEQ (Convolution):")
-    print(f"  Download: {src['eq']}")
+    print(f"  Site: {src['eq']}")
     print(f"  How: {src['eq_note']}")
     print(f"  Place: ~/.config/hifi-suite/eq.wav")
     print(f"\nSurround (HRIR/SOFA):")
-    print(f"  Download: {src['sofa']}")
+    print(f"  Site: {src['sofa']}")
     print(f"  How: {src['sofa_note']}")
     print(f"  Place: ~/Resources/hrir.sofa")
-    print(f"\nMore HRTF databases:")
+    print(f"\nHRTF Databases (sofacoustics.org):")
     for name, url, desc in src["hrtf"]:
-        print(f"  {name}: {url} — {desc}")
+        print(f"  {name}")
+        print(f"    {url}")
+        print(f"    {desc}")
 
 
 # ── NC: Noise Cancelling Virtual Microphone ───────────────────────────────
@@ -411,8 +417,9 @@ def enable_surround(channels: int = 8) -> bool:
         if headset:
             print_headset_sources(headset.get("name", ""))
         else:
-            print(f"\nSOFA downloads: https://www.audioease.com/sofa/")
-            print(f"More: https://aarikka.fi/sofa/")
+            print(f"\nSOFA downloads: http://sofacoustics.org/data")
+            print(f"Best: ARI database (220+ listeners)")
+            print(f"  http://sofacoustics.org/data/database/ari")
         return False
 
     FILTER_DIR.mkdir(parents=True, exist_ok=True)
@@ -527,8 +534,11 @@ def enable_eq(wav_path: str = None) -> bool:
             print_headset_sources(headset.get("name", ""))
         else:
             print("Download: https://autoeq.app")
-            print("Search your headset, select 'Convolution' format")
-            print("Place at: ~/.config/hifi-suite/eq.wav")
+            print("  Search your headset model")
+            print("  Select 'Convolution' format, download .wav")
+            print("  Place at: ~/.config/hifi-suite/eq.wav")
+            print("\nSource: https://github.com/jaakkopasanen/AutoEq")
+            print("  16k+ stars, measurements from oratory1990, crinacle, Rtings")
         return False
 
     FILTER_DIR.mkdir(parents=True, exist_ok=True)

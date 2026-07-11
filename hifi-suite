@@ -176,6 +176,11 @@ NCEOF
                 echo "Surround: install virtual-surround-manager (recommended):" >&2
                 echo "  paru -S virtual-surround-manager" >&2
                 echo "  or: flatpak install flathub de.berny23.virtual_surround_manager" >&2
+                echo "" >&2
+                echo "Or download HRIR .sofa files:" >&2
+                echo "  http://sofacoustics.org/data" >&2
+                echo "  Best: ARI database (220+ listeners)" >&2
+                echo "  Place: ~/Resources/hrir.sofa" >&2
                 return 1
             fi ;;
         eq)
@@ -357,19 +362,20 @@ print_headset_sources('$name')
         echo "=================================================="
         echo ""
         echo "EQ (Convolution):"
-        echo "  Download: https://autoeq.app"
+        echo "  Site: https://autoeq.app"
         echo "  How: Search your headset, select 'Convolution' format, download .wav"
         echo "  Place: ~/.config/hifi-suite/eq.wav"
         echo ""
         echo "Surround (HRIR/SOFA):"
-        echo "  Download: https://www.audioease.com/sofa/"
-        echo "  How: Download any HRIR .sofa file (generic HRTF works well)"
+        echo "  Site: http://sofacoustics.org/data"
+        echo "  How: Download .sofa from ARI (220+ listeners) or CIPIC (45 listeners)"
         echo "  Place: ~/Resources/hrir.sofa"
         echo ""
-        echo "More HRTF databases:"
-        echo "  Aalto: https://aarikka.fi/sofa/"
-        echo "  CIPIC: https://www.ece.ucdavis.edu/cipic/spatial-sound/"
-        echo "  MIT: https://sound.media.mit.edu/KEMAR.html"
+        echo "HRTF Databases:"
+        echo "  ARI: http://sofacoustics.org/data/database/ari"
+        echo "  CIPIC: http://sofacoustics.org/data/database/cipic"
+        echo "  MIT-KEMAR: http://sofacoustics.org/data/database/mit"
+        echo "  HUTUBS: http://sofacoustics.org/data/database/hutubs/"
     }
 }
 
@@ -404,6 +410,7 @@ cmd_auto() {
     else
         echo "virtual-surround-manager: not installed"
         echo "  Install: paru -S virtual-surround-manager"
+        echo "  Or: flatpak install flathub de.berny23.virtual_surround_manager"
     fi
 
     # Start daemon
