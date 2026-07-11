@@ -197,6 +197,134 @@ def _restart_pw():
     _run(["systemctl", "--user", "restart", "pipewire", "wireplumber"])
 
 
+# ── Headset-Specific File Recommendations ─────────────────────────────────
+
+# Database: headset → best sources for EQ/SOFA files
+HEADSET_SOURCES = {
+    # Format: brand_pattern: { eq_url, eq_search, sofa_url, sofa_note }
+    "redragon": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Redragon H{model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file (generic HRTF works well)",
+    },
+    "logitech": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Logitech {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "G Pro X has good built-in spatial. For custom: download .sofa",
+    },
+    "hyperx": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "HyperX {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "razer": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Razer {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "steelseries": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "SteelSeries {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "corsair": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Corsair {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "sennheiser": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Sennheiser {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Sennheiser has great HRTF data available",
+    },
+    "sony": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Sony {model}",
+        "eq_note": "WH-1000XM4/XM5 are well supported. Search your model.",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "jbl": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "JBL {model}",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+    "audio-technica": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "Audio-Technica {model}",
+        "eq_note": "ATH-M50x, ATH-G1 well supported. Search your model.",
+        "sofa_url": "https://www.audioease.com/sofa/",
+        "sofa_note": "Download any HRIR .sofa file",
+    },
+}
+
+# Additional HRTF databases
+HRTF_DATABASES = [
+    ("Aalto Databases", "https://aarikka.fi/sofa/", "Free SOFA files from Aalto University"),
+    ("CIPIC HRTF", "https://www.ece.ucdavis.edu/cipic/spatial-sound/", "Classic HRTF database"),
+    ("MIT KEMAR", "https://sound.media.mit.edu/KEMAR.html", "MIT measurement data"),
+    ("Oliver Thiergard", "https://github.com/chmod222/Cross-Ears-HRTF", "GitHub: free SOFA collection"),
+]
+
+
+def get_headset_sources(headset_name: str) -> Dict:
+    """Get recommended download sources for a specific headset."""
+    name_lower = headset_name.lower()
+    result = {"eq": None, "sofa": None, "hrtf": HRTF_DATABASES}
+
+    # Match brand
+    for brand, sources in HEADSET_SOURCES.items():
+        if brand in name_lower:
+            result["eq"] = sources["eq_url"]
+            result["eq_note"] = sources["eq_note"]
+            result["sofa"] = sources["sofa_url"]
+            result["sofa_note"] = sources["sofa_note"]
+            break
+
+    # Default if no match
+    if not result["eq"]:
+        result["eq"] = "https://autoeq.app"
+        result["eq_note"] = "Search your headset model, select 'Convolution' format"
+        result["sofa"] = "https://www.audioease.com/sofa/"
+        result["sofa_note"] = "Download any HRIR .sofa file (generic HRTF)"
+
+    return result
+
+
+def print_headset_sources(headset_name: str):
+    """Print download recommendations for a headset."""
+    src = get_headset_sources(headset_name)
+    print(f"\nRecommended files for: {headset_name}")
+    print("=" * 50)
+    print(f"\nEQ (Convolution):")
+    print(f"  Download: {src['eq']}")
+    print(f"  How: {src['eq_note']}")
+    print(f"  Place: ~/.config/hifi-suite/eq.wav")
+    print(f"\nSurround (HRIR/SOFA):")
+    print(f"  Download: {src['sofa']}")
+    print(f"  How: {src['sofa_note']}")
+    print(f"  Place: ~/Resources/hrir.sofa")
+    print(f"\nMore HRTF databases:")
+    for name, url, desc in src["hrtf"]:
+        print(f"  {name}: {url} — {desc}")
+
+
 # ── NC: Noise Cancelling Virtual Microphone ───────────────────────────────
 
 def enable_nc(threshold: float = 50.0) -> bool:
@@ -278,6 +406,13 @@ def enable_surround(channels: int = 8) -> bool:
         print("No surround method available.")
         print("Option A (recommended): paru -S virtual-surround-manager")
         print("Option B: Download HRIR .sofa to ~/Resources/hrir.sofa")
+        # Show headset-specific recommendation
+        headset = find_wireless_headset()
+        if headset:
+            print_headset_sources(headset.get("name", ""))
+        else:
+            print(f"\nSOFA downloads: https://www.audioease.com/sofa/")
+            print(f"More: https://aarikka.fi/sofa/")
         return False
 
     FILTER_DIR.mkdir(parents=True, exist_ok=True)
@@ -386,8 +521,14 @@ def enable_eq(wav_path: str = None) -> bool:
                 break
 
     if not wav_path or not Path(wav_path).exists():
-        print("EQ .wav not found. Download from https://autoeq.app")
-        print("Place at ~/.config/hifi-suite/eq.wav")
+        print("EQ .wav not found.")
+        headset = find_wireless_headset()
+        if headset:
+            print_headset_sources(headset.get("name", ""))
+        else:
+            print("Download: https://autoeq.app")
+            print("Search your headset, select 'Convolution' format")
+            print("Place at: ~/.config/hifi-suite/eq.wav")
         return False
 
     FILTER_DIR.mkdir(parents=True, exist_ok=True)

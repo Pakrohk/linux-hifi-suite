@@ -40,6 +40,10 @@ EasyEffects:
   hifi-suite ee-start          Start EasyEffects
   hifi-suite ee-stop           Stop EasyEffects
 
+Files:
+  hifi-suite recommend [name]   Show best download sites for your headset
+  hifi-suite recommend          Auto-detect headset and recommend
+
 Auto:
   hifi-suite auto              Auto-detect and configure everything
 
@@ -327,6 +331,48 @@ cmd_ee_load() { easyeffects --load-preset "$1" 2>/dev/null && echo "Loaded: $1";
 cmd_ee_start() { systemctl --user start easyeffects 2>/dev/null && echo "EasyEffects started"; }
 cmd_ee_stop() { systemctl --user stop easyeffects 2>/dev/null && echo "EasyEffects stopped"; }
 
+# ── Recommend ─────────────────────────────────────────────────────────────
+cmd_recommend() {
+    local name="$1"
+    if [ -z "$name" ]; then
+        # Auto-detect headset
+        local status=$(send "status" 2>/dev/null)
+        if [[ "$status" == *device=* ]]; then
+            name=$(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')
+            echo "Detected: $name"
+        else
+            echo "No headset detected. Usage: hifi-suite recommend <headset name>"
+            echo "Example: hifi-suite recommend 'Redragon H888 Luce'"
+            return 1
+        fi
+    fi
+    python3 -c "
+import sys; sys.path.insert(0, '$(dirname "$0")')
+from hifi_pipewire import print_headset_sources
+print_headset_sources('$name')
+" 2>/dev/null || {
+        # Fallback: hardcoded recommendations
+        echo ""
+        echo "Recommended files for: $name"
+        echo "=================================================="
+        echo ""
+        echo "EQ (Convolution):"
+        echo "  Download: https://autoeq.app"
+        echo "  How: Search your headset, select 'Convolution' format, download .wav"
+        echo "  Place: ~/.config/hifi-suite/eq.wav"
+        echo ""
+        echo "Surround (HRIR/SOFA):"
+        echo "  Download: https://www.audioease.com/sofa/"
+        echo "  How: Download any HRIR .sofa file (generic HRTF works well)"
+        echo "  Place: ~/Resources/hrir.sofa"
+        echo ""
+        echo "More HRTF databases:"
+        echo "  Aalto: https://aarikka.fi/sofa/"
+        echo "  CIPIC: https://www.ece.ucdavis.edu/cipic/spatial-sound/"
+        echo "  MIT: https://sound.media.mit.edu/KEMAR.html"
+    }
+}
+
 # ── Auto ──────────────────────────────────────────────────────────────────
 cmd_auto() {
     echo "=== HiFi Suite Auto-Setup ==="
@@ -420,6 +466,7 @@ case "$1" in
     ee-start)       cmd_ee_start ;;
     ee-stop)        cmd_ee_stop ;;
     auto)           cmd_auto ;;
+    recommend)      shift; cmd_recommend "$@" ;;
     daemon)         shift; cmd_daemon "$@" ;;
     help|-h|--help) usage ;;
     *) echo "Unknown: $1" >&2; usage; exit 1 ;;
