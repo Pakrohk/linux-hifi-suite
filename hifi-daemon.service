@@ -1,0 +1,13 @@
+[Unit]
+Description=HiFi Suite Audio Daemon
+After=sound.target pipewire.service
+Wants=sound.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hifi-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

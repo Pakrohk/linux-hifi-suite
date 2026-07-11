@@ -1,0 +1,9 @@
+{
+    "uuid": "hifi-suite@cinnamon",
+    "name": "HiFi Suite",
+    "description": "Audio volume control and effects manager for wireless headsets",
+    "version": "1.0.0",
+    "cinnamon-version": ["5.6", "6.0"],
+    "url": "https://github.com/redragon-audio-suite",
+    "icon": "audio-headphones"
+}

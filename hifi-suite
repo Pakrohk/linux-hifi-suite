@@ -1,0 +1,222 @@
+#!/bin/bash
+# hifi-suite — unified audio control CLI with zero-config
+SOCK="${XDG_RUNTIME_DIR:-/tmp}/hifi-suite.sock"
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hifi-suite"
+PW_FILTER="/etc/pipewire/filter-chain.conf.d"
+
+usage() {
+    cat <<EOF
+Usage: hifi-suite <command> [args]
+
+Volume:
+  hifi-suite vol <0-100>     Set volume
+  hifi-suite vol mute        Toggle mute
+  hifi-suite vol get         Get current volume
+
+Status:
+  hifi-suite status          Show device + effects info
+
+Effects (zero-config):
+  hifi-suite enable <surround|nc|eq|ec>
+  hifi-suite disable <surround|nc|eq|ec>
+  hifi-suite effects         List all effects and status
+
+Auto-setup:
+  hifi-suite auto             Auto-detect and configure everything
+  hifi-suite setup            Interactive first-run wizard
+
+Daemon:
+  hifi-suite daemon start|stop|restart|status
+EOF
+}
+
+send() {
+    if [ ! -S "$SOCK" ]; then
+        echo "Daemon not running. Starting..." >&2
+        systemctl --user start hifi-daemon 2>/dev/null || \
+            nohup python3 "$(dirname "$0")/hifi-daemon.py" &>/dev/null &
+        sleep 0.5
+    fi
+    printf '%s' "$1" | socat - "UNIX-CONNECT:$SOCK" 2>/dev/null && return 0
+    printf '%s' "$1" | ncat -U "$SOCK" 2>/dev/null && return 0
+    printf '%s' "$1" | nc -U -N "$SOCK" 2>/dev/null && return 0
+    printf '%s' "$1" | nc -U "$SOCK" 2>/dev/null && return 0
+    python3 - "$SOCK" "$1" 2>/dev/null <<'PY'
+import socket,sys
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+s.connect(sys.argv[1]);s.sendall(sys.argv[2].encode());s.shutdown(socket.SHUT_WR)
+d=[]
+while True:
+    c=s.recv(1024)
+    if not c:break
+    d.append(c)
+print(b"".join(d).decode(),end="")
+s.close()
+PY
+}
+
+# Volume
+cmd_vol() {
+    local arg="${1:-}"
+    case "$arg" in
+        ""|[gG][eE][tT])
+            local r=$(send "get")
+            [[ "$r" == OK:* ]] && echo "${r#OK: }%" || { echo "$r" >&2; return 1; } ;;
+        [mM][uU][tT][eE]) send "mute" ;;
+        [0-9]|[0-9][0-9]|100) send "set $arg" ;;
+        +[0-9]*|-[0-9]*)
+            local cur=$(cmd_vol get 2>/dev/null); cur=${cur%\%}
+            local new=$((cur + arg))
+            (( new < 0 )) && new=0; (( new > 100 )) && new=100
+            send "set $new" ;;
+        *) echo "Bad volume: $arg" >&2; return 1 ;;
+    esac
+}
+
+# Effects
+cmd_enable() {
+    local f="$1"
+    local conf="$PW_FILTER/$f.conf"
+    local user_conf="$CONF_DIR/$f.conf"
+
+    # Check if config exists
+    if [ ! -f "$conf" ] && [ ! -f "$user_conf" ]; then
+        # Generate minimal config
+        case "$f" in
+            nc)
+                local plugin="/usr/lib/ladspa/librnnoise_ladspa.so"
+                [ ! -f "$plugin" ] && plugin="/usr/lib64/ladspa/librnnoise_ladspa.so"
+                mkdir -p "$PW_FILTER"
+                cat > "$conf" <<NCEOF
+context.modules = [
+    { name = libpipewire-module-filter-chain
+        flags = [ nofail ]
+        args = {
+            node.description = "RNNoise"
+            media.name       = "RNNoise"
+            filter.graph = {
+                nodes = [
+                    { type = ladspa name = rnnoise
+                      plugin = "$plugin"
+                      label  = noise_suppressor_mono
+                      control = {
+                          "VAD Threshold (%)"          = 75.0
+                          "VAD Grace Period (ms)"      = 200
+                          "Retroactive VAD Grace (ms)" = 0
+                      } }
+                ]
+            }
+            audio.rate = 48000
+            capture.props = { node.name = "capture.rnnoise_source" node.passive = true }
+            playback.props = { node.name = "output.rnnoise_source" media.class = Audio/Source }
+        }
+    }
+]
+NCEOF
+                ;;
+            *)
+                echo "No config template for: $f" >&2
+                echo "Create $user_conf manually or place a .conf in $PW_FILTER/" >&2
+                return 1 ;;
+        esac
+    fi
+
+    echo "Enabled: $f (restart pipewire or run 'hifi-suite daemon restart')"
+}
+
+cmd_disable() {
+    local f="$1"
+    local conf="$PW_FILTER/$f.conf"
+    rm -f "$conf" 2>/dev/null
+    echo "Disabled: $f (restart pipewire to apply)"
+}
+
+cmd_effects() {
+    echo "Effects:"
+    for f in surround surround714 nc eq ec; do
+        local status="off"
+        [ -f "$PW_FILTER/$f.conf" ] && status="ON"
+        printf "  %-12s %s\n" "$f" "$status"
+    done
+    echo ""
+    # EasyEffects status
+    if pgrep -x easyeffects >/dev/null 2>&1; then
+        echo "EasyEffects: running (may conflict with nc/eq/ec)"
+    else
+        echo "EasyEffects: not running"
+    fi
+}
+
+# Auto-setup: zero-config
+cmd_auto() {
+    echo "Detecting headset..."
+    local status=$(send "status" 2>/dev/null)
+    if [[ "$status" == *device=* ]]; then
+        local device=$(echo "$status" | sed -n 's/.*device=\([^ ]*\).*/\1/p')
+        echo "  Found: $device"
+    else
+        echo "  No headset detected. Connect a wireless headset and retry."
+        return 1
+    fi
+
+    # Auto-enable NC if plugin available
+    local plugin="/usr/lib/ladspa/librnnoise_ladspa.so"
+    [ ! -f "$plugin" ] && plugin="/usr/lib64/ladspa/librnnoise_ladspa.so"
+    if [ -f "$plugin" ]; then
+        if [ ! -f "$PW_FILTER/nc.conf" ]; then
+            cmd_enable nc
+            echo "  Auto-enabled: noise cancellation"
+        fi
+    fi
+
+    # Start daemon
+    cmd_daemon start 2>/dev/null
+
+    echo ""
+    echo "Setup complete. Run 'hifi-suite effects' to see status."
+}
+
+cmd_setup() {
+    mkdir -p "$CONF_DIR" "$PW_FILTER"
+    echo "Config: $CONF_DIR"
+    echo "PipeWire filters: $PW_FILTER"
+    echo "Run 'hifi-suite auto' for zero-config setup."
+}
+
+# Daemon
+cmd_daemon() {
+    local action="${1:-start}"
+    case "$action" in
+        start)
+            systemctl --user start hifi-daemon 2>/dev/null \
+                || nohup python3 "$(dirname "$0")/hifi-daemon.py" &>/dev/null &
+            echo "Daemon started" ;;
+        stop)
+            systemctl --user stop hifi-daemon 2>/dev/null \
+                || pkill -f hifi-daemon.py 2>/dev/null
+            echo "Daemon stopped" ;;
+        restart)
+            systemctl --user restart hifi-daemon 2>/dev/null \
+                || { cmd_daemon stop; cmd_daemon start; } ;;
+        status)
+            systemctl --user status hifi-daemon 2>/dev/null \
+                || pgrep -f hifi-daemon.py >/dev/null && echo "Running" || echo "Stopped" ;;
+        *) echo "Usage: hifi-suite daemon {start|stop|restart|status}" >&2; return 1 ;;
+    esac
+}
+
+# Main
+[ $# -eq 0 ] && { usage; exit 0; }
+
+case "$1" in
+    vol|volume) shift; cmd_vol "$@" ;;
+    status) send "status" ;;
+    enable) shift; cmd_enable "$1" ;;
+    disable) shift; cmd_disable "$1" ;;
+    effects) cmd_effects ;;
+    auto) cmd_auto ;;
+    setup) cmd_setup ;;
+    daemon) shift; cmd_daemon "$@" ;;
+    help|-h|--help) usage ;;
+    *) echo "Unknown command: $1" >&2; usage; exit 1 ;;
+esac

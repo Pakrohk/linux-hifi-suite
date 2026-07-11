@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+    <schema id="org.gnome.shell.extensions.hifi-suite" path="/org/gnome/shell/extensions/hifi-suite/">
+        <key name="auto-enable-nc" type="b">
+            <default>true</default>
+            <summary>Auto-enable noise cancellation</summary>
+        </key>
+    </schema>
+</schemalist>
