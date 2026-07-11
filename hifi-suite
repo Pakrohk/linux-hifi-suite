@@ -100,11 +100,11 @@ cmd_default() { send "default"; }
 # ── Effects ───────────────────────────────────────────────────────────────
 cmd_enable() {
     local f="$1"
-    local conf="$PW_FILTER/$f.conf"
     mkdir -p "$PW_FILTER"
 
     case "$f" in
         nc)
+            # Auto-create virtual mic with noise cancellation
             local plugin=""
             for p in /usr/lib/ladspa/librnnoise_ladspa.so \
                      /usr/lib64/ladspa/librnnoise_ladspa.so \
@@ -112,16 +112,18 @@ cmd_enable() {
                 [ -f "$p" ] && plugin="$p" && break
             done
             if [ -z "$plugin" ]; then
-                echo "RNNoise plugin not found. Install: noise-suppression-for-voice" >&2
+                echo "RNNoise not found. Install: noise-suppression-for-voice" >&2
                 return 1
             fi
-            cat > "$conf" <<NCEOF
+            cat > "$PW_FILTER/nc.conf" <<NCEOF
+// HiFi Suite — Noise Cancelling Virtual Microphone
+// Select "Noise Cancelling Mic" as your input source. Done.
 context.modules = [
     { name = libpipewire-module-filter-chain
         flags = [ nofail ]
         args = {
-            node.description = "Noise Cancelling source (RNNoise)"
-            media.name       = "Noise Cancelling source"
+            node.description = "Noise Cancelling Mic"
+            media.name       = "Noise Cancelling Mic"
             filter.graph = {
                 nodes = [
                     { type = ladspa name = rnnoise
@@ -135,23 +137,51 @@ context.modules = [
                 ]
             }
             audio.rate = 48000
-            capture.props = { node.name = "capture.rnnoise_source" node.passive = true audio.rate = 48000 }
-            playback.props = { node.name = "rnnoise_source" media.class = Audio/Source audio.rate = 48000 }
+            capture.props = { node.name = "capture.hifi_rnnoise" node.passive = true audio.rate = 48000 }
+            playback.props = { node.name = "hifi_rnnoise_source" media.class = Audio/Source audio.rate = 48000 node.description = "Noise Cancelling Mic" }
         }
     }
 ]
 NCEOF
+            systemctl --user restart pipewire wireplumber 2>/dev/null
+            echo "Created virtual mic: 'Noise Cancelling Mic'"
+            echo "Select it as your input source — noise is auto-removed."
             ;;
-        *)
+        surround|surround714)
             local tpl="/usr/share/hifi-suite/configs/$f.conf"
             if [ -f "$tpl" ]; then
-                cp "$tpl" "$conf"
+                cp "$tpl" "$PW_FILTER/$f.conf"
+                systemctl --user restart pipewire wireplumber 2>/dev/null
+                echo "Created virtual surround sink."
+                echo "Select it as your output — spatial audio is automatic."
             else
-                echo "No config for: $f" >&2; return 1
+                echo "SOFA file needed. Download from https://www.audioease.com/sofa/" >&2
+                return 1
             fi ;;
+        eq)
+            local tpl="/usr/share/hifi-suite/configs/$f.conf"
+            if [ -f "$tpl" ]; then
+                cp "$tpl" "$PW_FILTER/$f.conf"
+                systemctl --user restart pipewire wireplumber 2>/dev/null
+                echo "Created virtual EQ sink."
+                echo "Select it as your output — equalization is automatic."
+            else
+                echo "EQ .wav needed. Download from https://autoeq.app" >&2
+                return 1
+            fi ;;
+        ec)
+            local tpl="/usr/share/hifi-suite/configs/$f.conf"
+            if [ -f "$tpl" ]; then
+                cp "$tpl" "$PW_FILTER/$f.conf"
+                systemctl --user restart pipewire wireplumber 2>/dev/null
+                echo "Created echo-cancelled mic."
+                echo "Select it as your input — echo is auto-removed."
+            else
+                echo "No EC config template found." >&2
+                return 1
+            fi ;;
+        *) echo "Unknown effect: $f" >&2; return 1 ;;
     esac
-    systemctl --user restart pipewire wireplumber 2>/dev/null
-    echo "Enabled: $f"
 }
 
 cmd_disable() {
