@@ -40,6 +40,12 @@ EasyEffects:
   hifi-suite ee-start          Start EasyEffects
   hifi-suite ee-stop           Stop EasyEffects
 
+Profiles:
+  hifi-suite profile list        List custom headset profiles
+  hifi-suite profile show [name] Show profile for headset
+  hifi-suite profile create      Create custom profile (interactive)
+  hifi-suite profile delete [name] Delete custom profile
+
 Files:
   hifi-suite recommend [name]   Show best download sites for your headset
   hifi-suite recommend          Auto-detect headset and recommend
@@ -336,6 +342,95 @@ cmd_ee_load() { easyeffects --load-preset "$1" 2>/dev/null && echo "Loaded: $1";
 cmd_ee_start() { systemctl --user start easyeffects 2>/dev/null && echo "EasyEffects started"; }
 cmd_ee_stop() { systemctl --user stop easyeffects 2>/dev/null && echo "EasyEffects stopped"; }
 
+# ── Profile ───────────────────────────────────────────────────────────────
+cmd_profile() {
+    local subcmd="${1:-list}"
+    shift 2>/dev/null
+    case "$subcmd" in
+        list)
+            echo "Custom headset profiles:"
+            local dir="${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/hifi-suite"
+            if [ -d "$dir" ] && [ "$(ls "$dir"/*.json 2>/dev/null)" ]; then
+                for f in "$dir"/*.json; do
+                    [ -f "$f" ] || continue
+                    local name=$(basename "$f" .json)
+                    local brand=$(python3 -c "import json; d=json.load(open('$f')); print(d.get('brand','?'))" 2>/dev/null)
+                    echo "  $name ($brand)"
+                done
+            else
+                echo "  (none)"
+                echo ""
+                echo "Create one: hifi-suite profile create"
+            fi
+            ;;
+        show)
+            local name="$1"
+            if [ -z "$name" ]; then
+                # Auto-detect
+                local status=$(send "status" 2>/dev/null)
+                if [[ "$status" == *device=* ]]; then
+                    name=$(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')
+                else
+                    echo "No headset detected. Usage: hifi-suite profile show <name>"
+                    return 1
+                fi
+            fi
+            python3 -c "
+import sys; sys.path.insert(0, '$(dirname "$0")')
+from hifi_pipewire import print_headset_profile
+print_headset_profile('$name')
+" 2>/dev/null || echo "Could not load profile for: $name"
+            ;;
+        create)
+            echo "Creating custom headset profile..."
+            echo ""
+            read -p "Headset name: " hname
+            read -p "Brand: " hbrand
+            read -p "EQ WAV path (or empty): " eqwav
+            read -p "SOFA file path (or empty): " sofa
+            read -p "NC threshold % (default 50): " nc_thresh
+            read -p "Recommended volume % (default 75): " rec_vol
+            read -p "Notes: " notes
+
+            nc_thresh="${nc_thresh:-50}"
+            rec_vol="${rec_vol:-75}"
+
+            local dir="${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/hifi-suite"
+            mkdir -p "$dir"
+
+            python3 -c "
+import json, sys
+profile = {
+    'name': '$hname',
+    'brand': '$hbrand',
+    'eq_wav': '${eqwav:-}',
+    'sofa_file': '${sofa:-}',
+    'nc_threshold': $nc_thresh,
+    'recommended_volume': $rec_vol,
+    'notes': '${notes:-}'
+}
+# Remove empty values
+profile = {k: v for k, v in profile.items() if v}
+with open('$dir/$hname.json', 'w') as f:
+    json.dump(profile, f, indent=2)
+print(f'Profile saved: $dir/$hname.json')
+" 2>/dev/null || echo "Failed to create profile"
+            ;;
+        delete)
+            local name="$1"
+            if [ -z "$name" ]; then
+                echo "Usage: hifi-suite profile delete <name>"
+                return 1
+            fi
+            local dir="${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/hifi-suite"
+            rm -f "$dir/$name.json" 2>/dev/null && echo "Deleted: $name" || echo "Not found: $name"
+            ;;
+        *)
+            echo "Usage: hifi-suite profile {list|show|create|delete}" >&2
+            return 1 ;;
+    esac
+}
+
 # ── Recommend ─────────────────────────────────────────────────────────────
 cmd_recommend() {
     local name="$1"
@@ -347,14 +442,14 @@ cmd_recommend() {
             echo "Detected: $name"
         else
             echo "No headset detected. Usage: hifi-suite recommend <headset name>"
-            echo "Example: hifi-suite recommend 'Redragon H888 Luce'"
+            echo "Example: hifi-suite recommend 'AULA G7 Pro 2026'"
             return 1
         fi
     fi
     python3 -c "
 import sys; sys.path.insert(0, '$(dirname "$0")')
-from hifi_pipewire import print_headset_sources
-print_headset_sources('$name')
+from hifi_pipewire import print_headset_profile
+print_headset_profile('$name')
 " 2>/dev/null || {
         # Fallback: hardcoded recommendations
         echo ""
@@ -474,6 +569,7 @@ case "$1" in
     ee-stop)        cmd_ee_stop ;;
     auto)           cmd_auto ;;
     recommend)      shift; cmd_recommend "$@" ;;
+    profile)        shift; cmd_profile "$@" ;;
     daemon)         shift; cmd_daemon "$@" ;;
     help|-h|--help) usage ;;
     *) echo "Unknown: $1" >&2; usage; exit 1 ;;

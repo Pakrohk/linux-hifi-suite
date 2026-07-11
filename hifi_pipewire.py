@@ -15,6 +15,7 @@ FILTER_DIR = PW_CONF / "filter-chain.conf.d"
 TEMPLATE_DIR = Path("/usr/share/hifi-suite/configs")
 STATE_DIR = Path.home() / ".local" / "share" / "hifi-suite"
 EE_PRESETS = Path.home() / ".config" / "easyeffects"
+CUSTOM_PROFILES = Path.home() / ".config" / "pipewire" / "hifi-suite"
 
 
 def _env():
@@ -99,8 +100,8 @@ def find_wireless_headset() -> Optional[Dict]:
     brands = [
         "Redragon", "Logitech", "HyperX", "Razer", "SteelSeries",
         "Corsair", "Sennheiser", "Sony", "JBL", "Audio-Technica",
-        "Bang", "Marshall", "Beats", "Anker", "Edifier", "XiiSound",
-        "Weltrend", r"[Hh]\d{3}",
+        "Aula", "Bang", "Marshall", "Beats", "Anker", "Edifier",
+        "XiiSound", "Weltrend", r"[Hh]\d{3}",
     ]
     for dev in list_audio_devices():
         for brand in brands:
@@ -197,6 +198,152 @@ def _restart_pw():
     _run(["systemctl", "--user", "restart", "pipewire", "wireplumber"])
 
 
+# ── Custom Headset Profiles (JSON) ───────────────────────────────────────
+#
+# Users can create custom profiles at:
+#   ~/.config/pipewire/hifi-suite/<headset-name>.json
+#
+# Example profile for AULA G7 Pro 2026:
+# {
+#   "name": "AULA G7 Pro 2026",
+#   "brand": "Aula",
+#   "eq_wav": "~/Downloads/aula-g7-pro-eq.wav",
+#   "sofa_file": "~/Resources/hrir-generic.sofa",
+#   "nc_threshold": 50,
+#   "recommended_volume": 75,
+#   "notes": "Budget gaming headset with surprisingly good soundstage"
+# }
+
+def list_custom_profiles() -> List[Dict]:
+    """List all custom headset profiles."""
+    profiles = []
+    if CUSTOM_PROFILES.exists():
+        for f in sorted(CUSTOM_PROFILES.glob("*.json")):
+            try:
+                data = json.loads(f.read_text())
+                data["_file"] = str(f)
+                profiles.append(data)
+            except Exception:
+                pass
+    return profiles
+
+
+def load_custom_profile(headset_name: str) -> Optional[Dict]:
+    """Load a custom profile by headset name."""
+    # Try exact match
+    profile_file = CUSTOM_PROFILES / f"{headset_name}.json"
+    if profile_file.exists():
+        try:
+            return json.loads(profile_file.read_text())
+        except Exception:
+            pass
+
+    # Try fuzzy match (case-insensitive, partial)
+    if CUSTOM_PROFILES.exists():
+        name_lower = headset_name.lower()
+        for f in CUSTOM_PROFILES.glob("*.json"):
+            if name_lower in f.stem.lower():
+                try:
+                    return json.loads(f.read_text())
+                except Exception:
+                    pass
+    return None
+
+
+def save_custom_profile(headset_name: str, profile: Dict) -> bool:
+    """Save a custom headset profile."""
+    CUSTOM_PROFILES.mkdir(parents=True, exist_ok=True)
+    profile_file = CUSTOM_PROFILES / f"{headset_name}.json"
+    profile["_name"] = headset_name
+    try:
+        profile_file.write_text(json.dumps(profile, indent=2))
+        return True
+    except Exception:
+        return False
+
+
+def delete_custom_profile(headset_name: str) -> bool:
+    """Delete a custom headset profile."""
+    profile_file = CUSTOM_PROFILES / f"{headset_name}.json"
+    if profile_file.exists():
+        profile_file.unlink()
+        return True
+    return False
+
+
+def get_profile_for_headset(headset_name: str) -> Optional[Dict]:
+    """Get profile for a headset: custom JSON first, then brand defaults."""
+    # Try custom profile first
+    custom = load_custom_profile(headset_name)
+    if custom:
+        return custom
+
+    # Fall back to brand defaults
+    name_lower = headset_name.lower()
+    for brand, sources in HEADSET_SOURCES.items():
+        if brand in name_lower:
+            return {
+                "name": headset_name,
+                "brand": brand,
+                "eq_url": sources["eq_url"],
+                "eq_note": sources["eq_note"],
+                "sofa_url": sources["sofa_url"],
+                "sofa_note": sources["sofa_note"],
+                "_source": "brand_default",
+            }
+
+    # Generic fallback
+    return {
+        "name": headset_name,
+        "brand": "unknown",
+        "eq_url": "https://autoeq.app",
+        "eq_note": "Search your headset model, select 'Convolution' format",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "Download from ARI database (220+ listeners)",
+        "_source": "generic",
+    }
+
+
+def print_headset_profile(headset_name: str):
+    """Print profile for a headset (custom or brand default)."""
+    profile = get_profile_for_headset(headset_name)
+    if not profile:
+        print(f"No profile found for: {headset_name}")
+        return
+
+    source = profile.get("_source", "custom")
+    print(f"\nProfile for: {headset_name}")
+    print(f"Source: {'Custom JSON' if source == 'custom' else 'Brand database' if source == 'brand_default' else 'Generic'}")
+    print("=" * 60)
+
+    if profile.get("eq_wav"):
+        print(f"\nEQ (pre-configured):")
+        print(f"  File: {profile['eq_wav']}")
+    else:
+        print(f"\nEQ (Convolution):")
+        print(f"  Site: {profile.get('eq_url', 'https://autoeq.app')}")
+        print(f"  How: {profile.get('eq_note', 'Search your headset')}")
+        print(f"  Place: ~/.config/hifi-suite/eq.wav")
+
+    if profile.get("sofa_file"):
+        print(f"\nSurround (pre-configured):")
+        print(f"  File: {profile['sofa_file']}")
+    else:
+        print(f"\nSurround (HRIR/SOFA):")
+        print(f"  Site: {profile.get('sofa_url', 'http://sofacoustics.org/data')}")
+        print(f"  How: {profile.get('sofa_note', 'Download from ARI database')}")
+        print(f"  Place: ~/Resources/hrir.sofa")
+
+    if profile.get("nc_threshold"):
+        print(f"\nNC threshold: {profile['nc_threshold']}%")
+    if profile.get("recommended_volume"):
+        print(f"Recommended volume: {profile['recommended_volume']}%")
+    if profile.get("notes"):
+        print(f"Notes: {profile['notes']}")
+
+    print(f"\nCustom profile: ~/.config/pipewire/hifi-suite/{headset_name}.json")
+
+
 # ── Headset-Specific File Recommendations ─────────────────────────────────
 
 # Database: headset → best sources for EQ/SOFA files
@@ -208,6 +355,13 @@ HEADSET_SOURCES = {
         "eq_note": "Search your model, select 'Convolution' format, download .wav",
         "sofa_url": "http://sofacoustics.org/data",
         "sofa_note": "ARI (220+ listeners) or CIPIC (45 listeners) — generic HRTF works well",
+    },
+    "aula": {
+        "eq_url": "https://autoeq.app",
+        "eq_search": "AULA {model}",
+        "eq_note": "New brand — may not be in AutoEq yet. Create custom profile at ~/.config/pipewire/hifi-suite/",
+        "sofa_url": "http://sofacoustics.org/data",
+        "sofa_note": "AULA headsets have good soundstage. ARI or MIT-KEMAR recommended.",
     },
     "logitech": {
         "eq_url": "https://autoeq.app",

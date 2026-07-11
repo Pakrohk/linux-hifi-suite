@@ -19,7 +19,7 @@ log = logging.getLogger("hifi-daemon")
 BRANDS = [
     r"Redragon", r"Logitech", r"HyperX", r"Razer", r"SteelSeries",
     r"Corsair", r"Sennheiser", r"Sony", r"JBL", r"Audio-Technica",
-    r"Bang", r"Marshall", r"Beats", r"Anker", r"Edifier",
+    r"Aula", r"Bang", r"Marshall", r"Beats", r"Anker", r"Edifier",
     r"XiiSound", r"Weltrend", r"[Hh]\d{3}",
 ]
 
