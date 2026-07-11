@@ -74,10 +74,6 @@ hifi-suite effects       # See what's active
 ### Arch Linux (AUR)
 
 ```bash
-# With an AUR helper:
-yay -S hifi-suite-git
-
-# Or with paru:
 paru -S hifi-suite-git
 ```
 
@@ -117,7 +113,7 @@ makepkg -si
 
 ```bash
 # 1. Install
-yay -S hifi-suite-git
+paru -S hifi-suite-git
 
 # 2. Auto-configure (detects headset, enables NC, starts daemon)
 hifi-suite auto
@@ -381,7 +377,7 @@ If you have `redragon-audio-suite-git` installed:
 
 ```bash
 # Just install the new package — pacman handles the transition
-yay -S hifi-suite-git
+paru -S hifi-suite-git
 
 # Old package is automatically removed
 # Your PipeWire configs are preserved

@@ -184,7 +184,7 @@ def enable_vsm_surround() -> bool:
     """
     if not virtual_surround_manager_installed():
         print("virtual-surround-manager not found.")
-        print("Install: yay -S virtual-surround-manager")
+        print("Install: paru -S virtual-surround-manager")
         print("Or: flatpak install flathub de.berny23.virtual_surround_manager")
         return False
 
@@ -276,7 +276,7 @@ def enable_surround(channels: int = 8) -> bool:
     sofa = _find_sofa_file()
     if not sofa:
         print("No surround method available.")
-        print("Option A (recommended): yay -S virtual-surround-manager")
+        print("Option A (recommended): paru -S virtual-surround-manager")
         print("Option B: Download HRIR .sofa to ~/Resources/hrir.sofa")
         return False
 

@@ -170,7 +170,7 @@ NCEOF
                 echo "Select it as your output — spatial audio is automatic."
             else
                 echo "Surround: install virtual-surround-manager (recommended):" >&2
-                echo "  yay -S virtual-surround-manager" >&2
+                echo "  paru -S virtual-surround-manager" >&2
                 echo "  or: flatpak install flathub de.berny23.virtual_surround_manager" >&2
                 return 1
             fi ;;
@@ -357,7 +357,7 @@ cmd_auto() {
         echo "  Run 'hifi-suite enable surround' to launch GUI"
     else
         echo "virtual-surround-manager: not installed"
-        echo "  Install: yay -S virtual-surround-manager"
+        echo "  Install: paru -S virtual-surround-manager"
     fi
 
     # Start daemon
