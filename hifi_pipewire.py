@@ -48,6 +48,22 @@ def wpctl_inspect(node_id: str) -> Dict[str, str]:
     return info
 
 
+def wpctl_inspect_all(node_id: str) -> Dict[str, str]:
+    """Extract ALL properties from wpctl inspect (not just node/device prefixed).
+
+    Handles the `*` prefix that PipeWire uses for active/default properties.
+    """
+    r = _run(["wpctl", "inspect", node_id])
+    if r.returncode != 0:
+        return {}
+    info = {}
+    for line in r.stdout.splitlines():
+        m = re.match(r"\s+\*?\s*(\S+)\s*=\s*(.+)", line)
+        if m:
+            info[m.group(1)] = m.group(2).strip().strip('"')
+    return info
+
+
 def wpctl_get_volume(node_id: str) -> Optional[float]:
     r = _run(["wpctl", "get-volume", node_id])
     if r.returncode != 0:
@@ -72,6 +88,11 @@ def wpctl_set_default(node_id: str) -> bool:
     return r.returncode == 0
 
 
+def _strip_wpctl_line(line: str) -> str:
+    """Strip Unicode box-drawing characters and whitespace from wpctl output."""
+    return re.sub(r"[\s│├└─]+", " ", line).strip()
+
+
 def list_audio_devices() -> List[Dict]:
     devices = []
     r = _run(["wpctl", "status"])
@@ -79,38 +100,165 @@ def list_audio_devices() -> List[Dict]:
         return devices
     section = None
     for line in r.stdout.splitlines():
-        s = line.strip()
+        s = _strip_wpctl_line(line)
         if "Sinks:" in s:
             section = "sink"
         elif "Sources:" in s:
             section = "source"
         elif "Streams:" in s or s == "":
             section = None
-        elif section and re.match(r"\d+\.", s):
-            m = re.match(r"(\d+)\.\s+(.+?)(\s+\*)?$", s)
+        elif section:
+            # Handle "* 56. Name" (default) and "56. Name" (non-default)
+            m = re.match(r"\*?\s*(\d+)\.\s+(.+)$", s)
             if m:
+                is_default = s.startswith("*")
+                name = m.group(2).strip()
+                # Strip trailing [vol: X.XX] for clean name
+                name = re.sub(r"\s*\[vol:\s*[\d.]+\]\s*$", "", name)
                 devices.append({
-                    "id": m.group(1), "name": m.group(2).strip(),
-                    "type": section, "is_default": m.group(3) is not None,
+                    "id": m.group(1), "name": name,
+                    "type": section, "is_default": is_default,
                 })
     return devices
 
 
-def find_wireless_headset() -> Optional[Dict]:
-    brands = [
-        "Redragon", "Logitech", "HyperX", "Razer", "SteelSeries",
-        "Corsair", "Sennheiser", "Sony", "JBL", "Audio-Technica",
-        "Aula", "Bang", "Marshall", "Beats", "Anker", "Edifier",
-        "XiiSound", "Weltrend", r"[Hh]\d{3}",
-    ]
+# ── Headset Detection ─────────────────────────────────────────────────────
+
+_BRANDS = [
+    "Redragon", "Logitech", "HyperX", "Razer", "SteelSeries",
+    "Corsair", "Sennheiser", "Sony", "JBL", "Audio-Technica",
+    "Aula", "Bang", "Marshall", "Beats", "Anker", "Edifier",
+    "XiiSound", "Weltrend", r"[Hh]\d{3}",
+]
+
+_VIRTUAL_PREFIXES = ("filter", "rnnoise", "easyeffects", "combine", "hifi_")
+
+
+def _is_virtual(node_name: str) -> bool:
+    """Check if a node name belongs to a virtual/filter device."""
+    nn = node_name.lower()
+    return any(p in nn for p in _VIRTUAL_PREFIXES)
+
+
+def get_connection_type(node_id: str) -> str:
+    """Return human-readable connection type from PipeWire device.bus property.
+
+    Returns: 'bluetooth', 'usb', 'pci' (3.5mm jack / built-in), or 'unknown'.
+    """
+    info = wpctl_inspect(node_id)
+    bus = info.get("device.bus", "")
+    return bus if bus else "unknown"
+
+
+def list_all_devices() -> List[Dict]:
+    """List all audio devices with full properties (bus, form-factor, icon)."""
+    devices = []
+    r = _run(["wpctl", "status"])
+    if r.returncode != 0:
+        return devices
+    section = None
+    for line in r.stdout.splitlines():
+        s = _strip_wpctl_line(line)
+        if "Devices:" in s:
+            section = "device"
+        elif "Sinks:" in s:
+            section = "sink"
+        elif "Sources:" in s:
+            section = "source"
+        elif "Streams:" in s or s == "":
+            section = None
+        elif section:
+            is_default = s.startswith("*")
+            m = re.match(r"\*?\s*(\d+)\.\s+(.+)$", s)
+            if m:
+                name = m.group(2).strip()
+                name = re.sub(r"\s*\[vol:\s*[\d.]+\]\s*$", "", name)
+                name = re.sub(r"\s*\[alsa\]\s*$", "", name)
+                dev = {
+                    "id": m.group(1), "name": name,
+                    "type": section, "is_default": is_default,
+                }
+                if section in ("sink", "source"):
+                    info = wpctl_inspect(dev["id"])
+                    device_info = _get_device_props(dev["id"])
+                    dev["node_name"] = info.get("node.name", "")
+                    dev["device_name"] = device_info.get("device.product.name", dev["name"])
+                    dev["device_id"] = info.get("device.id", "")
+                    dev["form_factor"] = device_info.get("device.form-factor", "")
+                    dev["bus"] = device_info.get("device.bus", "")
+                    dev["icon"] = device_info.get("device.icon-name", "")
+                devices.append(dev)
+    return devices
+
+
+def _get_device_props(sink_node_id: str) -> Dict[str, str]:
+    """From a sink node ID, fetch the parent Device node's full properties.
+
+    The Sink node has device.id pointing to the Device node, where
+    device.form-factor and device.icon-name live.
+    Uses wpctl_inspect_all (not the filtered version) to capture device.id.
+    """
+    sink_all = wpctl_inspect_all(sink_node_id)
+    device_id = sink_all.get("device.id", "")
+    if not device_id:
+        return {}
+    return wpctl_inspect_all(device_id)
+
+
+def detect_headset() -> Optional[Dict]:
+    """Detect any headset using PipeWire device properties.
+
+    Detection priority:
+    1. device.form-factor = "headset" on parent Device node
+    2. Brand name match (legacy fallback)
+    3. Bluetooth device with Audio/Sink (likely BT headset)
+
+    Works for: USB, Bluetooth, 2.4GHz dongle, 3.5mm jack headsets.
+    """
+    candidates = []
+
     for dev in list_audio_devices():
-        for brand in brands:
+        if dev["type"] != "sink":
+            continue
+        sink_info = wpctl_inspect(dev["id"])
+        device_info = _get_device_props(dev["id"])
+        form_factor = device_info.get("device.form-factor", "")
+        bus = device_info.get("device.bus", sink_info.get("device.bus", ""))
+        icon = device_info.get("device.icon-name", "")
+
+        dev["node_name"] = sink_info.get("node.name", "")
+        dev["device_name"] = device_info.get("device.product.name", dev["name"])
+        dev["device_id"] = sink_info.get("device.id", "")
+        dev["form_factor"] = form_factor
+        dev["bus"] = bus
+        dev["icon"] = icon
+
+        # Strategy 1: form-factor = "headset" (most reliable)
+        if form_factor == "headset":
+            dev["detect_method"] = "form-factor"
+            return dev
+
+        # Collect for fallback scoring
+        candidates.append(dev)
+
+    # Strategy 2 & 3: brand match + bluetooth fallback
+    for dev in candidates:
+        score = 0
+        for brand in _BRANDS:
             if re.search(brand, dev["name"], re.I):
-                info = wpctl_inspect(dev["id"])
-                dev["node_name"] = info.get("node.name", "")
-                dev["device_name"] = info.get("device.product.name", dev["name"])
-                return dev
+                score += 3
+        if dev.get("bus") == "bluetooth":
+            score += 5
+        if score >= 3:
+            dev["detect_method"] = "brand" if score == 3 else "bluetooth"
+            return dev
+
     return None
+
+
+def find_wireless_headset() -> Optional[Dict]:
+    """Detect headset — uses PipeWire properties (form-factor, bus, brand)."""
+    return detect_headset()
 
 
 def find_physical_mic() -> Optional[Dict]:
@@ -124,6 +272,144 @@ def find_physical_mic() -> Optional[Dict]:
                 continue
             dev["node_name"] = nn
             return dev
+    return None
+
+
+# ── Battery Detection ─────────────────────────────────────────────────────
+
+def get_battery_level() -> Optional[Dict]:
+    """Get battery level of detected headset.
+
+    Methods tried in order:
+    1. UPower D-Bus (most reliable for Bluetooth headsets)
+    2. PipeWire Battery property (if exposed)
+    3. bluetoothctl BatteryPercentage (for paired BT devices)
+
+    Returns: {"level": int (0-100), "charging": bool, "method": str} or None.
+    """
+    # Method 1: UPower D-Bus
+    result = _battery_upower()
+    if result:
+        return result
+
+    # Method 2: PipeWire battery property
+    headset = detect_headset()
+    if headset:
+        result = _battery_pipewire(headset.get("id", ""))
+        if result:
+            return result
+
+        # Method 3: bluetoothctl (only for Bluetooth devices)
+        if headset.get("bus") == "bluetooth":
+            result = _battery_bluetoothctl(headset.get("device_name", ""))
+            if result:
+                return result
+
+    return None
+
+
+def _battery_upower() -> Optional[Dict]:
+    """Get battery via UPower D-Bus (best for Bluetooth headsets)."""
+    r = _run(["gdbus", "call", "--system",
+              "--dest", "org.freedesktop.UPower",
+              "--object-path", "/org/freedesktop/UPower",
+              "--method", "org.freedesktop.UPower.EnumerateDevices"])
+    if r.returncode != 0:
+        return None
+
+    # Extract device paths
+    paths = re.findall(r"(/org/freedesktop/UPower/devices/[^\s']+)", r.stdout)
+    for path in paths:
+        # Get display name
+        name_r = _run(["gdbus", "call", "--system",
+                       "--dest", "org.freedesktop.UPower",
+                       "--object-path", path,
+                       "--method", "org.freedesktop.DBus.Properties.Get",
+                       "org.freedesktop.UPower.Device", "NativePath"])
+        if name_r.returncode != 0:
+            continue
+        native = name_r.stdout.lower()
+
+        # Check if it's an audio device (headset)
+        # Bluetooth audio devices often show as /org/bluez/... or contain "headset"
+        is_audio = any(kw in native for kw in ("headset", "headphone", "audio", "bluez"))
+        if not is_audio:
+            continue
+
+        # Get percentage
+        pct_r = _run(["gdbus", "call", "--system",
+                       "--dest", "org.freedesktop.UPower",
+                       "--object-path", path,
+                       "--method", "org.freedesktop.DBus.Properties.Get",
+                       "org.freedesktop.UPower.Device", "Percentage"])
+        if pct_r.returncode != 0:
+            continue
+        pct_m = re.search(r"double\s+([\d.]+)", pct_r.stdout)
+        if not pct_m:
+            continue
+
+        # Get charging state
+        state_r = _run(["gdbus", "call", "--system",
+                         "--dest", "org.freedesktop.UPower",
+                         "--object-path", path,
+                         "--method", "org.freedesktop.DBus.Properties.Get",
+                         "org.freedesktop.UPower.Device", "State"])
+        charging = False
+        if state_r.returncode == 0:
+            # State 1 = charging, 2 = discharging, 4 = fully charged
+            state_m = re.search(r"uint32\s+(\d+)", state_r.stdout)
+            if state_m:
+                charging = int(state_m.group(1)) in (1, 4)
+
+        return {"level": int(float(pct_m.group(1))),
+                "charging": charging, "method": "upower"}
+
+    return None
+
+
+def _battery_pipewire(node_id: str) -> Optional[Dict]:
+    """Get battery from PipeWire device properties."""
+    if not node_id:
+        return None
+    info = wpctl_inspect_all(node_id)
+    # PipeWire may expose battery as device.battery.charge-level or similar
+    for key in info:
+        if "battery" in key.lower() or "charge" in key.lower():
+            m = re.search(r"(\d+)", info[key])
+            if m:
+                return {"level": int(m.group(1)), "charging": None,
+                        "method": "pipewire"}
+    return None
+
+
+def _battery_bluetoothctl(device_name: str) -> Optional[Dict]:
+    """Get battery from bluetoothctl (for paired BT devices)."""
+    # List paired devices
+    r = _run(["bluetoothctl", "devices", "Paired"])
+    if r.returncode != 0:
+        return None
+
+    mac = None
+    for line in r.stdout.splitlines():
+        if device_name.lower() in line.lower():
+            m = re.match(r"Device\s+([0-9A-F:]{17})", line, re.I)
+            if m:
+                mac = m.group(1)
+                break
+
+    if not mac:
+        return None
+
+    # Get battery info
+    info_r = _run(["bluetoothctl", "info", mac])
+    if info_r.returncode != 0:
+        return None
+
+    pct_m = re.search(r"BatteryPercentage:\s*(\d+)", info_r.stdout)
+    if pct_m:
+        return {"level": int(pct_m.group(1)), "charging": None,
+                "method": "bluetoothctl"}
+
     return None
 
 
@@ -352,7 +638,7 @@ HEADSET_SOURCES = {
     "redragon": {
         "eq_url": "https://autoeq.app",
         "eq_search": "Redragon H{model}",
-        "eq_note": "Search your model, select 'Convolution' format, download .wav",
+        "eq_note": "Search your model, select 'Convolution' format, download .wav. New models (H888 Luce etc.) may not be listed yet — create a custom profile.",
         "sofa_url": "http://sofacoustics.org/data",
         "sofa_note": "ARI (220+ listeners) or CIPIC (45 listeners) — generic HRTF works well",
     },

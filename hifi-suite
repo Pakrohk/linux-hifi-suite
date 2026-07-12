@@ -17,7 +17,10 @@ Volume:
 
 Devices:
   hifi-suite devices           List all audio devices (wpctl)
+  hifi-suite devices --detail  List devices with connection type info
+  hifi-suite battery           Show headset battery level
   hifi-suite default           Set headset as default output
+  hifi-suite scan              Force re-detection of headset
 
 Effects:
   hifi-suite enable <nc|surround|eq|ec>
@@ -102,7 +105,36 @@ cmd_vol() {
 
 # ── Devices ───────────────────────────────────────────────────────────────
 cmd_devices() {
-    wpctl status 2>/dev/null || echo "wpctl not found — install pipewire"
+    if [ "$1" = "--detail" ] || [ "$1" = "-d" ]; then
+        # Detailed view with connection type via daemon
+        local r=$(send "devices")
+        if [[ "$r" == OK:* ]]; then
+            echo "${r#OK: }"
+        else
+            # Fallback to plain wpctl status
+            wpctl status 2>/dev/null || echo "wpctl not found — install pipewire"
+        fi
+    else
+        wpctl status 2>/dev/null || echo "wpctl not found — install pipewire"
+    fi
+}
+
+cmd_battery() {
+    local r=$(send "battery")
+    if [[ "$r" == OK:* ]]; then
+        echo "${r#OK: }"
+    else
+        echo "No battery info available (device may not support battery reporting)"
+    fi
+}
+
+cmd_scan() {
+    local r=$(send "scan")
+    if [[ "$r" == OK:* ]]; then
+        echo "${r#OK: }"
+    else
+        echo "No headset found"
+    fi
 }
 
 cmd_default() { send "default"; }
@@ -482,7 +514,23 @@ cmd_auto() {
     # Detect headset
     local status=$(send "status" 2>/dev/null)
     if [[ "$status" == *device=* ]]; then
-        echo "Headset: $(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')"
+        local device=$(echo "$status" | sed 's/.*device=\([^ ]*\).*/\1/')
+        local bus=$(echo "$status" | grep -oP 'bus=\K\S+' || echo "?")
+        echo "Headset: $device"
+
+        # Show connection type
+        case "$bus" in
+            usb)     echo "Connection: USB / 2.4GHz dongle" ;;
+            bluetooth) echo "Connection: Bluetooth" ;;
+            pci)     echo "Connection: 3.5mm jack / built-in" ;;
+            *)       echo "Connection: $bus" ;;
+        esac
+
+        # Show battery if available
+        local bat=$(send "battery" 2>/dev/null)
+        if [[ "$bat" == OK:* ]]; then
+            echo "Battery: $(echo "$bat" | sed 's/OK: //')"
+        fi
     else
         echo "No headset detected. Connect and retry."
         return 1
@@ -552,7 +600,9 @@ cmd_daemon() {
 case "$1" in
     vol|volume)     shift; cmd_vol "$@" ;;
     status)         send "status" ;;
-    devices)        cmd_devices ;;
+    devices)        shift; cmd_devices "$@" ;;
+    battery)        cmd_battery ;;
+    scan)           cmd_scan ;;
     default)        cmd_default ;;
     enable)         shift; cmd_enable "$1" ;;
     disable)        shift; cmd_disable "$1" ;;

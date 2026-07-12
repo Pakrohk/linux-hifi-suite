@@ -56,8 +56,9 @@ hifi-suite effects       # See what's active
 
 | Feature | Description |
 |---------|-------------|
-| **Auto-detection** | Detects any wireless headset via `wpctl` |
+| **Universal detection** | Detects ANY headset — USB, Bluetooth, 2.4GHz dongle, 3.5mm jack — via PipeWire `device.form-factor` |
 | **Zero-config** | `hifi-suite auto` configures everything on first run |
+| **Battery monitoring** | Shows battery level for Bluetooth headsets (UPower/bluetoothctl) |
 | **Volume control** | Set, mute, relative (+/-), software gain up to 150% |
 | **Virtual surround** | 7.1 and 7.1.4 via PipeWire SOFA spatializer |
 | **Noise cancellation** | RNNoise virtual mic — select as input, noise gone |
@@ -65,6 +66,7 @@ hifi-suite effects       # See what's active
 | **Echo cancellation** | PipeWire `module-echo-cancel` for speaker leakage |
 | **Combined sinks** | Play to speakers + headset simultaneously |
 | **Mic preference rules** | WirePlumber auto-select preferred mic on connect |
+| **Device monitoring** | Daemon polls every 3s, auto-detects connect/disconnect |
 | **Custom profiles** | Per-headset JSON settings (EQ, SOFA, NC, volume) |
 | **File recommendations** | Best download sites for your specific headset model |
 | **EasyEffects compat** | Detects conflicts, manages presets via CLI |
@@ -131,9 +133,11 @@ hifi-suite vol get       # Show current volume
 # 4. Check status
 hifi-suite effects       # See active effects
 hifi-suite devices       # List all PipeWire devices
+hifi-suite devices --detail  # Devices with connection type
+hifi-suite battery       # Show headset battery level
 ```
 
-That's it. The daemon runs in the background and keeps everything in sync.
+That's it. The daemon runs in the background, detects connect/disconnect events, and keeps everything in sync.
 
 ---
 
@@ -162,6 +166,9 @@ hifi-suite effects         # List all effects and status
 
 ```bash
 hifi-suite devices         # List all PipeWire sinks/sources
+hifi-suite devices --detail  # Devices with connection type (usb/bluetooth/pci)
+hifi-suite battery         # Show headset battery level
+hifi-suite scan            # Force re-detection of headset
 hifi-suite default         # Set headset as default output
 ```
 
@@ -370,12 +377,19 @@ Auto-installed. Add to panel:
 
 ## Compatible Headsets
 
-HiFi Suite auto-detects any wireless headset. Tested with:
+HiFi Suite detects **any headset** via PipeWire's `device.form-factor` property — no brand list needed. Works with:
+
+- **USB headsets** — detected via `device.bus = "usb"`
+- **Bluetooth headsets** — detected via `device.bus = "bluetooth"`
+- **2.4GHz dongle headsets** — detected via `device.bus = "usb"` (dongle is a USB device)
+- **3.5mm jack headsets** — detected via `device.bus = "pci"` (onboard audio)
+
+Tested with:
 
 | Brand | Models |
 |-------|--------|
+| Redragon | H888 Luce (USB + Bluetooth), H878, H848, H510 |
 | Aula | G7 Pro 2026, F2026 |
-| Redragon | H878, H848, H510 |
 | Logitech | G Pro X, G733, G935 |
 | HyperX | Cloud II, Cloud Alpha, Cloud Orbit |
 | Razer | BlackShark, Kraken, Nari |
@@ -386,7 +400,7 @@ HiFi Suite auto-detects any wireless headset. Tested with:
 | JBL | Quantum 800, Quantum 910 |
 | Audio-Technica | ATH-G1, ATH-M50xBT |
 
-> If your headset isn't detected, open an issue with the output of `wpctl status` and `aplay -l`.
+> If your headset isn't detected, run `wpctl inspect <device_id>` and check if `device.form-factor` is present. Open an issue with the output of `wpctl status` and `hifi-suite devices --detail`.
 
 ---
 
