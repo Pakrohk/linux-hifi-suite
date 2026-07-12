@@ -18,17 +18,33 @@ class HiFiIndicator extends PanelMenu.Button {
         this._volume = 0;
         this._muted = false;
         this._device = 'Headset';
+        this._bus = '';
+        this._battery = -1;
+        this._batteryCharging = false;
+        this._effects = {};
         this._updating = false;
 
         this._icon = new St.Icon({ icon_name: 'audio-volume-muted-symbolic', style_class: 'system-status-icon' });
         this.add_child(this._icon);
 
-        // Status
+        // Device info
         this._statusLabel = new St.Label({ text: 'Detecting...', style: 'font-size: 9pt; padding: 4px 8px;' });
         let statusItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
         statusItem.add_child(this._statusLabel);
         this.menu.addMenuItem(statusItem);
+
+        // Connection type
+        this._connLabel = new St.Label({ text: '', style: 'font-size: 8pt; color: #999; padding: 0 8px 4px 8px;' });
+        let connItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
+        connItem.add_child(this._connLabel);
+        this.menu.addMenuItem(connItem);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        // Battery badge
+        this._batLabel = new St.Label({ text: '', style: 'font-size: 9pt; padding: 2px 8px;' });
+        let batItem = new PopupMenu.PopupMenuItem('', { reactive: false, can_focus: false });
+        batItem.add_child(this._batLabel);
+        this.menu.addMenuItem(batItem);
 
         // Volume display
         this._volLabel = new St.Label({ text: '-- %', style: 'font-size: 18pt; font-weight: bold; padding: 6px 0;' });
@@ -50,21 +66,16 @@ class HiFiIndicator extends PanelMenu.Button {
         this._muteBtn.connect('activate', () => this._mute());
         this.menu.addMenuItem(this._muteBtn);
 
-        // Set default
-        let defaultBtn = new PopupMenu.PopupMenuItem('Use as Output');
-        defaultBtn.connect('activate', () => this._setDefault());
-        this.menu.addMenuItem(defaultBtn);
-
         // Effects submenu
-        let effectsItem = new PopupMenu.PopupMenuItem('Effects');
-        this.menu.addMenuItem(effectsItem);
         let effectsSub = new PopupMenu.PopupSubMenuMenuItem('Effects');
         this.menu.addMenuItem(effectsSub);
 
-        ['surround', 'nc', 'eq', 'ec'].forEach(f => {
+        this._effectItems = {};
+        ['nc', 'surround', 'eq', 'ec'].forEach(f => {
             let item = new PopupMenu.PopupSwitchMenuItem(f.toUpperCase(), false);
-            item.connect('toggled', (_, on) => this._toggleFilter(f, on));
+            item.connect('toggled', (_, on) => this._toggleEffect(f, on));
             effectsSub.menu.addMenuItem(item);
+            this._effectItems[f] = item;
         });
 
         // Scroll to adjust
@@ -88,6 +99,15 @@ class HiFiIndicator extends PanelMenu.Button {
             return out.trim();
         } catch (e) {
             return '';
+        }
+    }
+
+    _connLabel(bus) {
+        switch (bus) {
+            case 'usb': return 'USB / 2.4GHz';
+            case 'bluetooth': return 'Bluetooth';
+            case 'pci': return '3.5mm / Built-in';
+            default: return bus || '';
         }
     }
 
@@ -130,20 +150,38 @@ class HiFiIndicator extends PanelMenu.Button {
         GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => { this._refresh(); return false; });
     }
 
-    _setDefault() {
-        if (!this._connected) return;
-        this._cmd('status');
-    }
-
-    _toggleFilter(name, on) {
+    _toggleEffect(name, on) {
         this._cmd(on ? 'enable ' + name : 'disable ' + name);
     }
 
     _refresh() {
-        let out = this._cmd('vol get');
-        let m = out.match(/(\d+)%/);
-        if (m) {
-            this._volume = parseInt(m[1]);
+        let out = this._cmd('status');
+        if (!out.includes('device=')) {
+            this._connected = false;
+            this._statusLabel.text = 'No headset';
+            this._connLabel.text = '';
+            this._batLabel.text = '';
+            return;
+        }
+
+        let devMatch = out.match(/device=([^\s]+(?:\s+[^\s]+)*?)\s+(?:id|node)=/);
+        let busMatch = out.match(/bus=(\S+)/);
+        let volMatch = out.match(/volume=(\d+)%/);
+        let batMatch = out.match(/battery=(\d+)/);
+
+        if (devMatch) {
+            this._device = devMatch[1];
+            this._connected = true;
+            this._statusLabel.text = this._device;
+        }
+
+        if (busMatch) {
+            this._bus = busMatch[1];
+            this._connLabel.text = this._connLabel(this._bus);
+        }
+
+        if (volMatch) {
+            this._volume = parseInt(volMatch[1]);
             this._muted = this._volume === 0;
             this._volLabel.text = this._volume + ' %';
             this._updating = true;
@@ -151,26 +189,31 @@ class HiFiIndicator extends PanelMenu.Button {
             this._updating = false;
             this._updateIcon();
         }
+
+        if (batMatch) {
+            this._battery = parseInt(batMatch[1]);
+            this._batteryCharging = out.includes('charging=true');
+            let icon = this._batteryCharging ? '⚡' : (this._battery < 20 ? '🔴' : this._battery < 50 ? '🟡' : '🟢');
+            this._batLabel.text = icon + ' Battery: ' + this._battery + '%';
+        } else {
+            this._battery = -1;
+            this._batLabel.text = '';
+        }
+
+        // Refresh effect states
+        let effOut = this._cmd('effects');
+        ['nc', 'surround', 'eq', 'ec'].forEach(f => {
+            let re = new RegExp('^\\s*' + f + '\\s+(ON|off)', 'm');
+            let m = effOut.match(re);
+            if (m && this._effectItems[f]) {
+                this._effectItems[f].setToggleState(m[1] === 'ON');
+            }
+        });
     }
 
     _startMonitor() {
         GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-            if (this._connected) {
-                this._refresh();
-            } else {
-                let out = this._cmd('status');
-                if (out.includes('device=')) {
-                    let m = out.match(/device=([^\s]+)/);
-                    if (m) {
-                        this._device = m[1];
-                        this._connected = true;
-                        this._statusLabel.text = this._device;
-                        this._refresh();
-                    }
-                } else {
-                    this._statusLabel.text = 'No headset';
-                }
-            }
+            this._refresh();
             return GLib.SOURCE_CONTINUE;
         });
     }

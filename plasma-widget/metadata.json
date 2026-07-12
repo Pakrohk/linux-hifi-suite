@@ -1,21 +1,18 @@
 {
     "KPlugin": {
         "Name": "HiFi Suite",
-        "Description": "Audio volume control and effects manager",
+        "Description": "Universal audio control for any headset — volume, effects, battery",
         "Icon": "audio-headphones",
         "Authors": [
             {
-                "Name": "HiFi Suite"
+                "Name": "Pakrohk",
+                "Email": "pakrohk@gmail.com"
             }
         ],
         "Category": "Multimedia",
-        "Version": "1.0",
-        "Website": "https://github.com/redragon-audio-suite"
+        "Version": "1.1",
+        "Website": "https://github.com/Pakrohk/linux-hifi-suite"
     },
-    "X-Plasma-API": "declarativeappletscript",
-    "X-Plasma-MainScript": "ui/main.qml",
-    "X-Plasma-Provides": [
-        "org.kde.plasma.multimedia"
-    ],
+    "X-Plasma-API-Minimum-Version": "6.0",
     "KPackageStructure": "Plasma/Applet"
 }

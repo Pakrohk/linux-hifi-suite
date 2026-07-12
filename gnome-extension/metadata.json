@@ -1,9 +1,9 @@
 {
     "uuid": "hifi-suite@hifi-suite",
     "name": "HiFi Suite",
-    "description": "Audio volume control and effects manager for wireless headsets",
+    "description": "Universal audio control for any headset — volume, effects, battery",
     "version": 1,
     "shell-version": ["46", "47", "48"],
-    "url": "https://github.com/redragon-audio-suite",
+    "url": "https://github.com/Pakrohk/linux-hifi-suite",
     "settings-schema": "org.gnome.shell.extensions.hifi-suite"
 }
