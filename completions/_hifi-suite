@@ -1,0 +1,71 @@
+#compdef hifi-suite
+
+_hifi-suite() {
+    local -i ret=1
+
+    _arguments -C \
+        '1:command:->cmd' \
+        '*::arg:->args' && ret=0
+
+    case $state in
+        cmd)
+            _values 'command' \
+                'vol[Set volume]' \
+                'volume[Set volume]' \
+                'status[Show device status]' \
+                'devices[List audio devices]' \
+                'battery[Show headset battery]' \
+                'scan[Force re-detection]' \
+                'default[Set headset as default]' \
+                'enable[Enable an effect]' \
+                'disable[Disable an effect]' \
+                'effects[List active effects]' \
+                'mic-prefer[Set mic preference]' \
+                'mic-prefer-regex[Set mic preference via regex]' \
+                'mic-rules[List active mic rules]' \
+                'mic-unprefer[Remove mic preference]' \
+                'combine[Create combined sink]' \
+                'combine-remove[Remove combined sink]' \
+                'ee-list[List EasyEffects presets]' \
+                'ee-load[Load EasyEffects preset]' \
+                'ee-start[Start EasyEffects]' \
+                'ee-stop[Stop EasyEffects]' \
+                'auto[Auto-detect and configure]' \
+                'recommend[Show file recommendations]' \
+                'profile[Manage headset profiles]' \
+                'daemon[Control the daemon]' \
+                'help[Show help]' \
+            && ret=0
+            ;;
+        args)
+            case $words[1] in
+                vol|volume)
+                    if [[ -n "$words[2]" && "$words[2]" == *([-+]) ]]; then
+                        _message 'relative amount'
+                    else
+                        _values 'volume' 0 10 20 30 40 50 60 70 80 90 100 mute get
+                    fi
+                    ;;
+                enable|disable)
+                    _values 'effect' nc surround surround714 eq ec
+                    ;;
+                profile)
+                    _values 'subcommand' list show create delete
+                    ;;
+                daemon)
+                    _values 'action' start stop restart status
+                    ;;
+                ee-load)
+                    local dir="${XDG_CONFIG_HOME:-$HOME/.config}/easyeffects/input"
+                    if [[ -d "$dir" ]]; then
+                        _values 'preset' "${(@f)$(ls "$dir"/*.json(N:.:t:r))}"
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+
+    return $ret
+}
+
+_hifi-suite "$@"
