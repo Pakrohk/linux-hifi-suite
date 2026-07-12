@@ -1,2 +1,5 @@
 .mimocode/
 aur-release/
+__pycache__/
+*.pyc
+*.pyo

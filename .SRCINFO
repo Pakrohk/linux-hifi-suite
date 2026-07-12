@@ -1,5 +1,5 @@
 pkgbase = hifi-suite-git
-	pkgdesc = Zero-config audio suite for wireless headsets: volume control, surround, noise cancellation, EQ
+	pkgdesc = Zero-config audio suite for wireless headsets: volume control, surround, NC, EQ, battery monitor
 	pkgver = 1.0.0
 	pkgrel = 1
 	url = https://github.com/Pakrohk/linux-hifi-suite
@@ -8,11 +8,11 @@ pkgbase = hifi-suite-git
 	license = MIT
 	makedepends = git
 	depends = python
+	depends = typer
 	depends = alsa-utils
 	depends = pipewire
 	depends = pipewire-alsa
 	depends = pipewire-pulse
-	depends = socat
 	optdepends = noise-suppression-for-voice: RNNoise LADSPA plugin (recommended for NC)
 	optdepends = virtual-surround-manager: Virtual 7.1/5.1 surround with HeSuVi WAV (recommended for surround)
 	optdepends = easyeffects: GUI audio effects (EQ, compressor, limiter)
@@ -30,4 +30,4 @@ pkgbase = hifi-suite-git
 	source = hifi-suite-git::git+https://github.com/Pakrohk/linux-hifi-suite.git
 	md5sums = SKIP
 
-	pkgname = hifi-suite-git
+pkgname = hifi-suite-git

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""HiFi Suite CLI entry point."""
+"""HiFi Suite Daemon entry point."""
 import sys, os
 
+# Support both installed (/usr/lib/hifi-suite) and local dev (/repo/)
 _install_dir = "/usr/lib/hifi-suite"
 _local_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -9,5 +10,5 @@ for d in [_install_dir, _local_dir]:
     if os.path.isdir(os.path.join(d, "hifi")) and d not in sys.path:
         sys.path.insert(0, d)
 
-from hifi.cli import main_entry
-sys.exit(main_entry())
+from hifi.daemon import main
+main()

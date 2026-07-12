@@ -2,10 +2,10 @@
   <img src="https://img.shields.io/badge/Audio-Wireless%20Headsets-232323?style=for-the-badge&labelColor=232323&color=00d4aa" alt="Audio"/>
   <img src="https://img.shields.io/badge/Linux-Arch%20%7C%20Fedora%20%7C%20Ubuntu-232323?style=for-the-badge&labelColor=232323&color=fcc624" alt="Linux"/>
   <img src="https://img.shields.io/badge/PipeWire-Native-232323?style=for-the-badge&labelColor=232323&color=ff6b6b" alt="PipeWire"/>
-  <img src="https://img.shields.io/badge/Status-Alpha-232323?style=for-the-badge&labelColor=232323&color=9b59b6" alt="Status"/>
+  <img src="https://img.shields.io/badge/Status-Stable-232323?style=for-the-badge&labelColor=232323&color=2ecc71" alt="Status"/>
 </p>
 
-<h1 align="center">HiFi Suite</h1>
+<h1 align="center">HiFi Suite v3</h1>
 
 <p align="center">
   <b>Zero-config audio suite for wireless headsets on Linux</b><br/>
@@ -17,9 +17,8 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#effects">Effects</a> ·
-  <a href="#custom-profiles">Profiles</a> ·
-  <a href="#desktop-widgets">Widgets</a> ·
-  <a href="#compatible-headsets">Headsets</a>
+  <a href="#architecture">Architecture</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -44,8 +43,8 @@ HiFi Suite wraps PipeWire's native `wpctl` CLI with a simple interface:
 
 ```bash
 hifi-suite auto          # Detect headset, enable NC, start daemon — done
-hifi-suite vol 75        # Set volume
-hifi-suite effects       # See what's active
+hifi-suite vol set 75    # Set volume
+hifi-suite effect list   # See what's active
 ```
 
 **One command. Zero config. Every headset.**
@@ -56,20 +55,16 @@ hifi-suite effects       # See what's active
 
 | Feature | Description |
 |---------|-------------|
-| **Universal detection** | Detects ANY headset — USB, Bluetooth, 2.4GHz dongle, 3.5mm jack — via PipeWire `device.form-factor` |
+| **Universal detection** | Detects ANY headset via PipeWire `device.form-factor` + brand + bluetooth fallback |
 | **Zero-config** | `hifi-suite auto` configures everything on first run |
-| **Battery monitoring** | Shows battery level for Bluetooth headsets (UPower/bluetoothctl) |
+| **Battery monitoring** | Shows battery level (UPower / PipeWire / bluetoothctl) |
 | **Volume control** | Set, mute, relative (+/-), software gain up to 150% |
 | **Virtual surround** | 7.1 and 7.1.4 via PipeWire SOFA spatializer |
 | **Noise cancellation** | RNNoise virtual mic — select as input, noise gone |
 | **Convolution EQ** | Apply AutoEq `.wav` files as PipeWire filter chains |
 | **Echo cancellation** | PipeWire `module-echo-cancel` for speaker leakage |
-| **Combined sinks** | Play to speakers + headset simultaneously |
-| **Mic preference rules** | WirePlumber auto-select preferred mic on connect |
-| **Device monitoring** | Daemon polls every 3s, auto-detects connect/disconnect |
 | **Custom profiles** | Per-headset JSON settings (EQ, SOFA, NC, volume) |
-| **File recommendations** | Best download sites for your specific headset model |
-| **EasyEffects compat** | Detects conflicts, manages presets via CLI |
+| **Learning system** | Remembers successful configs per device, auto-applies next time |
 | **3 DE widgets** | KDE Plasma 6, GNOME Shell 46+, Cinnamon |
 | **Systemd daemon** | Auto-start, persistent volume, socket-based control |
 
@@ -98,11 +93,11 @@ makepkg -si
 | Required | Purpose |
 |----------|---------|
 | `python` | Daemon and CLI |
+| `typer` | CLI framework (auto-completion, colored help) |
 | `alsa-utils` | ALSA hardware control |
 | `pipewire` | Audio server |
 | `pipewire-alsa` | ALSA bridge |
 | `pipewire-pulse` | PulseAudio compatibility |
-| `socat` | Socket communication |
 
 | Optional | Purpose |
 |----------|---------|
@@ -126,15 +121,14 @@ paru -S hifi-suite-git
 hifi-suite auto
 
 # 3. Control volume
-hifi-suite vol 75        # Set to 75%
-hifi-suite vol mute      # Toggle mute
-hifi-suite vol get       # Show current volume
+hifi-suite vol set 75     # Set to 75%
+hifi-suite vol mute       # Toggle mute
+hifi-suite vol get        # Show current volume
 
 # 4. Check status
-hifi-suite effects       # See active effects
-hifi-suite devices       # List all PipeWire devices
-hifi-suite devices --detail  # Devices with connection type
-hifi-suite battery       # Show headset battery level
+hifi-suite effect list    # See active effects
+hifi-suite device list    # List all PipeWire devices
+hifi-suite device battery # Show headset battery level
 ```
 
 That's it. The daemon runs in the background, detects connect/disconnect events, and keeps everything in sync.
@@ -143,96 +137,65 @@ That's it. The daemon runs in the background, detects connect/disconnect events,
 
 ## Commands
 
-### Volume
+### Top-level
 
 ```bash
-hifi-suite vol 75          # Set absolute volume
-hifi-suite vol 50+         # Increase by 50%
-hifi-suite vol 10-         # Decrease by 10%
-hifi-suite vol mute        # Toggle mute
-hifi-suite vol get         # Get current volume
+hifi-suite auto           # Auto-detect + configure everything
+hifi-suite status         # Show device and effects status
+hifi-suite scan           # Force re-detection of headset
+hifi-suite effects        # List all effects and status
+hifi-suite default        # Set headset as default output
+hifi-suite select         # Interactive device selector
+hifi-suite recommend      # Show download recommendations
 ```
 
-### Effects
+### Volume (`hifi-suite vol`)
 
 ```bash
-hifi-suite enable nc       # Enable noise cancellation
-hifi-suite disable nc      # Disable noise cancellation
-hifi-suite enable surround # Enable 7.1 surround
-hifi-suite effects         # List all effects and status
+hifi-suite vol get        # Get current volume
+hifi-suite vol set 75     # Set absolute volume
+hifi-suite vol up 10      # Increase by 10%
+hifi-suite vol down 10    # Decrease by 10%
+hifi-suite vol mute       # Toggle mute
 ```
 
-### Devices
+### Devices (`hifi-suite device`)
 
 ```bash
-hifi-suite devices         # List all PipeWire sinks/sources
-hifi-suite devices --detail  # Devices with connection type (usb/bluetooth/pci)
-hifi-suite battery         # Show headset battery level
-hifi-suite scan            # Force re-detection of headset
-hifi-suite default         # Set headset as default output
+hifi-suite device list           # List all PipeWire devices
+hifi-suite device list --detail  # Devices with connection type
+hifi-suite device scan           # Force re-detection
+hifi-suite device battery        # Show headset battery level
+hifi-suite device default        # Set headset as default output
 ```
 
-### Mic Preference (WirePlumber)
+### Effects (`hifi-suite effect`)
 
 ```bash
-# Auto-select a mic when connected
-hifi-suite mic-prefer "alsa_input.usb-Jabra_Evolve2_85.mono-fallback"
-
-# Regex match (e.g. any USB mic)
-hifi-suite mic-prefer-regex "alsa_input.usb-*"
-
-# List active rules
-hifi-suite mic-rules
-
-# Remove preference
-hifi-suite mic-unprefer
+hifi-suite effect list           # List effects and status
+hifi-suite effect enable nc      # Enable noise cancellation
+hifi-suite effect disable nc     # Disable noise cancellation
+hifi-suite effect enable surround # Enable 7.1 surround
+hifi-suite effect enable eq      # Enable convolution EQ
+hifi-suite effect enable ec      # Enable echo cancellation
 ```
 
-### Combined Output
+### Profiles (`hifi-suite profile`)
 
 ```bash
-# Play to speakers AND headset simultaneously
-hifi-suite combine "Speakers+Headset" \
-  "alsa_output.pci-0000_00_1f.3.analog-stereo" \
-  "alsa_output.usb-Headset-00.analog-stereo"
-
-# Remove combined sink
-hifi-suite combine-remove "Speakers+Headset"
+hifi-suite profile list                    # List custom profiles
+hifi-suite profile show "Redragon H888"    # Show profile
+hifi-suite profile create                  # Create new profile (interactive)
+hifi-suite profile delete "Redragon H888"  # Delete profile
 ```
 
-### EasyEffects
+### Daemon (`hifi-suite daemon`)
 
 ```bash
-hifi-suite ee-list         # List installed presets
-hifi-suite ee-load "MyEQ"  # Load a preset
-hifi-suite ee-start        # Start EasyEffects
-hifi-suite ee-stop         # Stop EasyEffects
-```
-
-### Custom Profiles
-
-```bash
-hifi-suite profile list        # List custom headset profiles
-hifi-suite profile show        # Show profile for detected headset
-hifi-suite profile show "AULA G7 Pro 2026"  # Show specific profile
-hifi-suite profile create      # Create new profile (interactive)
-hifi-suite profile delete "AULA G7 Pro 2026" # Delete profile
-```
-
-### File Recommendations
-
-```bash
-hifi-suite recommend        # Auto-detect headset and recommend files
-hifi-suite recommend "AULA G7 Pro 2026"  # Recommend for specific model
-```
-
-### Daemon
-
-```bash
-hifi-suite daemon start    # Start the daemon
-hifi-suite daemon stop     # Stop the daemon
-hifi-suite daemon restart  # Restart
-hifi-suite daemon status   # Check if running
+hifi-suite daemon start     # Start the daemon
+hifi-suite daemon stop      # Stop the daemon
+hifi-suite daemon restart   # Restart
+hifi-suite daemon status    # Check if running
 ```
 
 ---
@@ -244,134 +207,165 @@ hifi-suite daemon status   # Check if running
 Automatic noise suppression using the RNNoise LADSPA plugin.
 
 ```bash
-hifi-suite enable nc       # Enable
-hifi-suite disable nc      # Disable
+hifi-suite effect enable nc
 ```
 
 **How it works:** Creates a virtual microphone source called "Noise Cancelling Mic". Select it as your input in any app — all noise is automatically removed.
-
-The plugin path is auto-detected across distributions:
-- `/usr/lib/ladspa/librnnoise_ladspa.so` (Arch, Fedora)
-- `/usr/lib64/ladspa/librnnoise_ladspa.so` (64-bit)
-- `/usr/lib/x86_64-linux-gnu/ladspa/` (Debian, Ubuntu)
 
 ### Virtual Surround
 
 7.1 and 7.1.4 virtual surround using PipeWire SOFA spatializer.
 
 ```bash
-hifi-suite enable surround    # 7.1
-hifi-suite enable surround714 # 7.1.4
+hifi-suite effect enable surround    # 7.1
 ```
 
 **Requirements:**
-- A `.sofa` HRIR file (download from [SOFA Conventions](http://sofacoustics.org/data) — ARI database recommended)
-- PipeWire built with `libmysofa` support
-- Or: [virtual-surround-manager](https://github.com/Berny23/virtual-surround-manager) (recommended — uses HeSuVi WAV, no config needed)
-
-> **Note:** Fedora needs `pipewire-module-filter-chain-sofa`. Ubuntu does not build PipeWire with libmysofa.
+- A `.sofa` HRIR file (download from [SOFA Conventions](http://sofacoustics.org/data))
+- Or: [virtual-surround-manager](https://github.com/Berny23/virtual-surround-manager) (recommended)
 
 ### Convolution EQ
 
 Apply EQ curves from [AutoEq](https://autoeq.app) as PipeWire filter chains.
 
 ```bash
-hifi-suite enable eq
+hifi-suite effect enable eq
 ```
 
-Place your `.wav` EQ file at `~/.config/hifi-suite/eq.wav`. AutoEq produces settings for all types of equalizer apps — select "Convolution" format for PipeWire.
+Place your `.wav` EQ file at `~/.config/hifi-suite/eq.wav`.
 
 ### Echo Cancellation
 
-For speakers or open-back headphones that leak audio. Uses PipeWire's `module-echo-cancel`.
+For speakers or open-back headphones that leak audio.
 
 ```bash
-hifi-suite enable ec
+hifi-suite effect enable ec
 ```
-
-Edit the config to set your actual microphone and output device node names.
 
 ---
 
-## Custom Profiles
+## Architecture
 
-Save per-headset settings as JSON files at `~/.config/pipewire/hifi-suite/`.
+HiFi Suite v3 uses **Functional IOP (Intent-Oriented Programming)** — a hybrid approach combining functional programming with intent-based data flow.
 
-### Profile Format
+### Core Principles
 
-```json
-{
-  "name": "AULA G7 Pro 2026",
-  "brand": "Aula",
-  "eq_wav": "~/Downloads/aula-g7-pro-eq.wav",
-  "sofa_file": "~/Resources/hrir-generic.sofa",
-  "nc_threshold": 50,
-  "recommended_volume": 75,
-  "notes": "Budget gaming headset with surprisingly good soundstage"
-}
+1. **State = TypedDict** — simple dict, no class overhead
+2. **Processors = pure functions** — `State → State`, no side effects
+3. **Pipeline = function composition** — `run(state, *steps)` instead of Pipeline class
+4. **CLI = thin Typer layer** — only I/O, all logic in processors
+
+### Project Structure
+
+```
+hifi/
+├── __init__.py    — version
+├── state.py       — State TypedDict + all pure processors
+├── pipeline.py    — compose() + run() — 35 lines
+├── cli.py         — Typer CLI (thin, delegates to pipeline)
+├── daemon.py      — daemon with device monitoring
+├── device.py      — detection (form-factor + brand + bluetooth)
+├── audio.py       — volume, filters, battery, profiles, display
+└── util.py        — shared utilities
 ```
 
-### Fields
+### How Data Flows
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Headset name (used as filename) |
-| `brand` | string | Brand name |
-| `eq_wav` | string | Path to EQ `.wav` file |
-| `sofa_file` | string | Path to HRIR `.sofa` file |
-| `nc_threshold` | number | RNNoise VAD threshold (0-100) |
-| `recommended_volume` | number | Optimal volume level (0-100) |
-| `notes` | string | User notes |
+```python
+from .state import State
+from .pipeline import run
+from . import state as s
 
-### How It Works
+# Each step reads state, returns new state
+result = run(
+    {"volume": 75},
+    s.detect_device,     # State → State (adds device info)
+    s.enable_nc,         # State → State (enables NC filter)
+    s.set_volume,        # State → State (sets volume)
+    after=s.record_outcome,  # Learning hook
+)
 
-1. `hifi-suite profile create` — interactive profile creation
-2. `hifi-suite recommend` — shows download sites + uses your profile
-3. `hifi-suite enable eq` — auto-uses `eq_wav` from profile if set
-4. `hifi-suite enable surround` — auto-uses `sofa_file` from profile if set
+if result.get("error"):
+    print(f"Error: {result['error']}")
+```
 
-**Priority:** Custom JSON > Brand defaults > Generic fallback
+### Adding a New Feature
 
-### Download Sources
+1. Add a processor in `state.py`:
+```python
+def my_new_feature(s: State) -> State:
+    if s.get("error"):
+        return s
+    # ... do something ...
+    return {**s, "my_feature_enabled": True}
+```
 
-| Type | Site | Notes |
-|------|------|-------|
-| **EQ WAV** | [autoeq.app](https://autoeq.app) | 6033+ headphones, select "Convolution" format |
-| **EQ Source** | [github.com/jaakkopasanen/AutoEq](https://github.com/jaakkopasanen/AutoEq) | 16k+ stars, measurements from oratory1990, crinacle, Rtings |
-| **SOFA HRIR** | [sofacoustics.org/data](http://sofacoustics.org/data) | Official: worldwide HRTFs, BRIRs |
-| **ARI Database** | [sofacoustics.org/data/database/ari](http://sofacoustics.org/data/database/ari) | 220+ listeners, best coverage |
-| **CIPIC** | [sofacoustics.org/data/database/cipic](http://sofacoustics.org/data/database/cipic) | 45 listeners, anthropometric data |
-| **MIT-KEMAR** | [sofacoustics.org/data/database/mit](http://sofacoustics.org/data/database/mit) | Classic dummy head, reference HRTFs |
-| **HUTUBS** | [sofacoustics.org/data/database/hutubs/](http://sofacoustics.org/data/database/hutubs/) | 96 listeners, 3D head models |
+2. Add a Typer command in `cli.py`:
+```python
+@app.command()
+def my_command():
+    st = _detect()
+    st = run(st, s.my_new_feature)
+    typer.echo(f"Done: {st.get('my_feature_enabled')}")
+```
+
+That's it. No classes to inherit, no interfaces to implement, no decorators to register.
+
+### Why This Design?
+
+| Old (OOP) | New (Functional IOP) |
+|---|---|
+| 16 files, 2695 lines | **8 files, 1496 lines** |
+| Intent dataclass + Pipeline class | State dict + run() function |
+| `pipe.process(Intent(...))` | `run(state, step1, step2)` |
+| Processor class methods | Pure functions `State → State` |
+| 50-line `_build_pipeline()` | 35-line `pipeline.py` total |
 
 ---
 
-## Desktop Widgets
+## Contributing
 
-### KDE Plasma 6
+### Development Setup
 
-Auto-installed with the package. Add to panel:
-1. Right-click panel → **Add Widgets**
-2. Search **"HiFi Suite"**
-3. Add to panel
-
-Features: volume slider, mute, effects toggle (NC/surround/eq/ec), scroll to adjust.
-
-### GNOME Shell 46+
-
-Auto-installed. Enable:
 ```bash
-gnome-extensions enable hifi-suite@hifi-suite
+git clone https://github.com/Pakrohk/linux-hifi-suite.git
+cd linux-hifi-suite
+
+# Run directly from source (no install needed)
+python3 hifi-suite --help
+python3 hifi-suite auto
 ```
 
-Features: panel icon, volume slider, mute, effects submenu, scroll to adjust.
+### Code Style
 
-### Cinnamon
+- **Pure processors** — each function in `state.py` takes `State`, returns `State`. No side effects.
+- **Thin CLI** — `cli.py` only handles I/O (typer prompts, printing). All logic in processors.
+- **No classes** — unless you need methods on data (e.g., `FilterManager` for filter lifecycle).
+- **English only** — all code comments and docstrings in English.
 
-Auto-installed. Add to panel:
-1. Right-click panel → **Applets**
-2. Find **"HiFi Suite"**
-3. Add to panel
+### Project Layout
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `state.py` | ~230 | State TypedDict + all processors |
+| `pipeline.py` | ~35 | `run()` and `compose()` |
+| `cli.py` | ~360 | Typer CLI commands |
+| `daemon.py` | ~190 | Unix socket daemon |
+| `device.py` | ~125 | Device detection |
+| `audio.py` | ~530 | Volume, filters, battery, profiles, display |
+| `util.py` | ~20 | Shared subprocess runner |
+
+### Testing
+
+```bash
+# Syntax check
+for f in hifi/*.py; do python3 -c "import ast; ast.parse(open('$f').read())"; done
+
+# Run from source
+python3 hifi-suite --help
+python3 hifi-suite device list
+python3 hifi-suite vol get
+```
 
 ---
 
@@ -381,103 +375,18 @@ HiFi Suite detects **any headset** via PipeWire's `device.form-factor` property 
 
 - **USB headsets** — detected via `device.bus = "usb"`
 - **Bluetooth headsets** — detected via `device.bus = "bluetooth"`
-- **2.4GHz dongle headsets** — detected via `device.bus = "usb"` (dongle is a USB device)
-- **3.5mm jack headsets** — detected via `device.bus = "pci"` (onboard audio)
+- **2.4GHz dongle headsets** — detected via `device.bus = "usb"`
+- **3.5mm jack headsets** — detected via `device.bus = "pci"`
 
-Tested with:
-
-| Brand | Models |
-|-------|--------|
-| Redragon | H888 Luce (USB + Bluetooth), H878, H848, H510 |
-| Aula | G7 Pro 2026, F2026 |
-| Logitech | G Pro X, G733, G935 |
-| HyperX | Cloud II, Cloud Alpha, Cloud Orbit |
-| Razer | BlackShark, Kraken, Nari |
-| SteelSeries | Arctis 7, Arctis Pro |
-| Corsair | Void, HS70, Virtuoso |
-| Sennheiser | GSP 670, GSP 370 |
-| Sony | WH-1000XM4, WF-1000XM4 |
-| JBL | Quantum 800, Quantum 910 |
-| Audio-Technica | ATH-G1, ATH-M50xBT |
-
-> If your headset isn't detected, run `wpctl inspect <device_id>` and check if `device.form-factor` is present. Open an issue with the output of `wpctl status` and `hifi-suite devices --detail`.
-
----
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────┐
-│                   hifi-suite                    │
-│         (CLI / Widget / Extension / Profile)    │
-├─────────────────────────────────────────────────┤
-│                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
-│  │ Volume   │  │ Effects  │  │ Device Mgmt  │   │
-│  │ Control  │  │ Manager  │  │ (wpctl)      │   │
-│  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
-│       │             │               │           │
-│  ┌────┴─────────────┴───────────────┴────────┐  │
-│  │              hifi-daemon.py               │  │
-│  │     (Socket server + PCM sync daemon)     │  │
-│  └──────────────────┬────────────────────────┘  │
-│                     │                           │
-├─────────────────────┼───────────────────────────┤
-│                     │ Unix Socket               │
-├─────────────────────┼───────────────────────────┤
-│                     ▼                           │
-│  ┌──────────────────────────────────────────┐   │
-│  │              PipeWire                    │   │
-│  │  ┌──────┐ ┌──────┐ ┌────┐ ┌──────────┐   │   │
-│  │  │ wpctl│ │filter│ │ NC │ │combine   │   │   │
-│  │  │      │ │chain │ │ RN │ │sink      │   │   │
-│  │  └──────┘ └──────┘ └────┘ └──────────┘   │   │
-│  └──────────────────────────────────────────┘   │
-│                                                 │
-│  ~/.config/pipewire/hifi-suite/                 │
-│  ├── AULA G7 Pro 2026.json  (custom profile)    │
-│  └── Redragon H888.json     (custom profile)    │
-└─────────────────────────────────────────────────┘
-```
-
----
-
-## Project Structure
-
-```
-linux-hifi-suite/
-├── hifi-daemon.py          # Unified daemon (volume sync + socket control)
-├── hifi_pipewire.py        # PipeWire integration (wpctl, filters, rules, profiles)
-├── hifi-suite              # CLI entry point
-├── hifi-daemon.service     # Systemd user service
-├── hifi-suite.install      # Pacman install hooks
-├── PKGBUILD                # Arch Linux package
-├── configs/                # PipeWire filter chain templates
-│   ├── surround-7.1.conf
-│   ├── surround-7.1.4.conf
-│   ├── nc.conf             # RNNoise
-│   ├── eq.conf             # Convolution EQ
-│   ├── ec.conf             # Echo cancellation
-│   └── 99-realtime.conf
-├── plasma-widget/          # KDE Plasma 6 widget
-├── gnome-extension/        # GNOME Shell 46+ extension
-└── cinnamon-applet/        # Cinnamon applet
-```
+Tested with: Redragon H888/H878/H848, Aula G7 Pro, Logitech G Pro X/G733, HyperX Cloud II/Alpha, Razer BlackShark/Kraken, SteelSeries Arctis 7, Sony WH-1000XM4, JBL Quantum 800.
 
 ---
 
 ## Upgrading from Redragon Audio Suite
 
-If you have `redragon-audio-suite-git` installed:
-
 ```bash
-# Just install the new package — pacman handles the transition
-paru -S hifi-suite-git
-
-# Old package is automatically removed
-# Your PipeWire configs are preserved
-# Run setup again:
-hifi-suite auto
+paru -S hifi-suite-git    # Old package auto-removed
+hifi-suite auto            # Re-run setup
 ```
 
 ---
@@ -489,5 +398,5 @@ hifi-suite auto
 ---
 
 <p align="center">
-  <sub>Built with PipeWire · Works on every Linux desktop · Zero config</sub>
+  <sub>Built with PipeWire + Python + Typer · Works on every Linux desktop · Zero config</sub>
 </p>
