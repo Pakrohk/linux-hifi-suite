@@ -15,7 +15,7 @@ from .audio import (success, error, warning, bold, dim, c, Color, device_icon,
                     get_profile, save_profile, delete_profile, list_profiles)
 
 app = typer.Typer(name="hifi-suite", help="Zero-config audio suite for Linux headsets",
-                  no_args_is_help=True, add_completion=False)
+                  no_args_is_help=True)
 vol_app = typer.Typer(help="Volume control", no_args_is_help=True)
 dev_app = typer.Typer(help="Device management", no_args_is_help=True)
 eff_app = typer.Typer(help="Audio effects", no_args_is_help=True)
