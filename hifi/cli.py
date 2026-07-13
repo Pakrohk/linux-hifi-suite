@@ -21,9 +21,11 @@ dev_app = typer.Typer(help="Device management", no_args_is_help=True)
 eff_app = typer.Typer(help="Audio effects", no_args_is_help=True)
 prof_app = typer.Typer(help="Headset profiles", no_args_is_help=True)
 daemon_app = typer.Typer(help="Daemon management", no_args_is_help=True)
+noise_app = typer.Typer(help="Noise filtering (input/output/both)", no_args_is_help=True)
 app.add_typer(vol_app, name="vol")
 app.add_typer(dev_app, name="device")
 app.add_typer(eff_app, name="effect")
+app.add_typer(noise_app, name="noise")
 app.add_typer(prof_app, name="profile")
 app.add_typer(daemon_app, name="daemon")
 
@@ -298,9 +300,13 @@ def eff_enable(name: EffectName = typer.Argument(...)):
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    proc = {"nc": s.enable_nc, "surround": s.enable_surround,
-            "eq": s.enable_eq, "ec": s.enable_ec}[name.value]
-    st = run({**st, f"{name.value}_enabled": True}, proc, after=s.record_outcome)
+    if name.value == "ec":
+        # EC = noise both directions
+        st = run({**st, "nc_enabled": True, "noise_mode": "both"}, s.enable_nc)
+    else:
+        proc = {"nc": s.enable_nc, "surround": s.enable_surround,
+                "eq": s.enable_eq}[name.value]
+        st = run({**st, f"{name.value}_enabled": True}, proc, after=s.record_outcome)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
@@ -324,6 +330,33 @@ def eff_disable(name: EffectName = typer.Argument(...)):
         raise typer.Exit(1)
     run({**st, "effect_to_disable": name.value}, s.disable_filter)
     typer.echo(f"Disabled: {name.value}")
+
+
+@eff_app.command(name="latency")
+def eff_latency(
+    mode: str = typer.Argument(..., help="on or off")
+):
+    """Toggle low-latency mode (quantum=64, RT priority).
+
+    ON:  Lower latency (~3ms), better for gaming/live monitoring.
+         May cause audio glitches on slow systems.
+    OFF: Default latency (~20ms), stable for music/media.
+    """
+    if mode == "on":
+        st = run({}, s.enable_low_latency)
+        if st.get("error"):
+            typer.echo(f"Error: {st['error']}", err=True)
+            raise typer.Exit(1)
+        typer.echo("Low latency mode: ON")
+        typer.echo("  Quantum: 64 samples (~3ms at 48kHz)")
+        typer.echo("  RT priority: enabled")
+        typer.echo("  Warning: may cause glitches on slow systems")
+    elif mode == "off":
+        st = run({}, s.disable_low_latency)
+        typer.echo("Low latency mode: OFF (defaults restored)")
+    else:
+        typer.echo("Usage: hifi-suite effect latency on|off", err=True)
+        raise typer.Exit(1)
 
 
 # ── Profile Subcommands ────────────────────────────────────────────────────
@@ -355,6 +388,72 @@ def prof_delete(name: str = typer.Argument(...)):
     else:
         typer.echo(f"Not found: {name}")
         raise typer.Exit(1)
+
+
+# ── Noise Subcommands ─────────────────────────────────────────────────────
+
+@noise_app.callback(invoke_without_command=True)
+def noise_cb(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        typer.echo(ctx.get_help())
+
+
+@noise_app.command(name="input")
+def noise_input():
+    """Enable noise cancellation on your microphone (outgoing)."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    st = run({**st, "nc_enabled": True, "noise_mode": "input"}, s.enable_nc)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Noise filter enabled on input (mic)")
+    typer.echo("Select 'Noise Cancelling Mic' as your input source.")
+
+
+@noise_app.command(name="output")
+def noise_output():
+    """Enable noise cancellation on output (incoming audio from other side)."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    st = run({**st, "nc_enabled": True, "noise_mode": "output"}, s.enable_nc)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Noise filter enabled on output")
+    typer.echo("Select 'Noise Filtered Output' as your output.")
+
+
+@noise_app.command(name="both")
+def noise_both():
+    """Enable noise cancellation on both input AND output."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    st = run({**st, "nc_enabled": True, "noise_mode": "both"}, s.enable_nc)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Noise filter enabled on both input and output")
+
+
+@noise_app.command(name="off")
+def noise_off():
+    """Disable all noise filters."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    from .audio import FilterManager
+    fm = FilterManager()
+    fm.unload("nc")
+    fm.unload("nc_out")
+    typer.echo("All noise filters disabled")
 
 
 # ── Daemon Subcommands ─────────────────────────────────────────────────────

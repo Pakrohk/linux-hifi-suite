@@ -31,6 +31,55 @@ def wpctl_set_default(node_id: str) -> bool:
     return _run(["wpctl", "set-default", node_id]).returncode == 0
 
 
+# ── Low Latency Mode ─────────────────────────────────────────────────────
+
+PW_CONF_DIR = Path.home() / ".config" / "pipewire"
+LOW_LATENCY_CONF = PW_CONF_DIR / "hifi-low-latency.conf"
+
+
+def low_latency_enabled() -> bool:
+    """Check if low-latency mode is active."""
+    return LOW_LATENCY_CONF.exists()
+
+
+def low_latency_enable() -> bool:
+    """Enable low-latency mode: quantum=64, rate=48000, realtime."""
+    PW_CONF_DIR.mkdir(parents=True, exist_ok=True)
+    LOW_LATENCY_CONF.write_text("""# HiFi Suite — Low Latency Mode
+# Reduces audio buffer size for lower latency (gaming, live monitoring)
+# May increase CPU usage and cause glitches on slow systems
+
+context.properties = {
+    default.clock.quantum = 64
+    default.clock.min-quantum = 32
+    default.clock.max-quantum = 256
+    default.clock.rate = 48000
+}
+
+context.modules = [
+    { name = libpipewire-module-rt
+        args = {
+            nice.level = -11
+            rt.prio = 88
+            rt.time.soft = -1
+            rt.time.hard = -1
+        }
+        flags = [ ifexists nofail ]
+    }
+]
+""")
+    _restart_pw()
+    return True
+
+
+def low_latency_disable() -> bool:
+    """Disable low-latency mode (restore defaults)."""
+    if LOW_LATENCY_CONF.exists():
+        LOW_LATENCY_CONF.unlink()
+    _restart_pw()
+    return True
+
+
 # ── PipeWire Node Management ──────────────────────────────────────────────
 
 def pw_list_nodes() -> list:
@@ -208,10 +257,11 @@ def launch_vsm():
 
 
 def render_nc(plugin: str, threshold: float = 50.0, mic_node: str = "") -> str:
+    """Render NC filter chain config. If mic_node is provided, routes explicitly."""
     cap = (f'node.name = "capture.hifi_rnnoise" node.target = "{mic_node}" audio.rate = 48000'
            if mic_node else
            'node.name = "capture.hifi_rnnoise" node.passive = true audio.rate = 48000')
-    return f'''# HiFi Suite — NC
+    return f'''# HiFi Suite — Noise Cancelling (Input)
 context.modules = [
     {{ name = libpipewire-module-filter-chain
         flags = [ ifexists nofail ]
@@ -232,6 +282,34 @@ context.modules = [
             playback.props = {{ node.name = "hifi_rnnoise_source"
                 media.class = Audio/Source audio.rate = 48000
                 node.description = "Noise Cancelling Mic" }}
+        }}
+    }}
+]'''
+
+
+def render_noise_output(plugin: str, out_node: str, threshold: float = 50.0) -> str:
+    """Render noise filter for OUTPUT — cleans incoming audio from the other side."""
+    return f'''# HiFi Suite — Noise Cancelling (Output)
+context.modules = [
+    {{ name = libpipewire-module-filter-chain
+        flags = [ ifexists nofail ]
+        args = {{
+            node.description = "Noise Filtered Output"
+            media.name = "Noise Filtered Output"
+            filter.graph = {{
+                nodes = [
+                    {{ type = ladspa name = rnnoise plugin = "{plugin}"
+                      label = noise_suppressor_mono
+                      control = {{ "VAD Threshold (%)" = {threshold}
+                                  "VAD Grace Period (ms)" = 200
+                                  "Retroactive VAD Grace (ms)" = 0 }} }}
+                ]
+            }}
+            audio.rate = 48000
+            capture.props = {{ node.target = "{out_node}" node.passive = true audio.rate = 48000 }}
+            playback.props = {{ node.name = "hifi_filtered_output"
+                media.class = Audio/Sink audio.rate = 48000
+                node.description = "Noise Filtered Output" }}
         }}
     }}
 ]'''
@@ -567,19 +645,32 @@ def print_device_table(devices):
 
 
 def print_effects(active=None):
-    from .audio import FilterManager
+    from .audio import FilterManager, low_latency_enabled
     if active is None:
         active = FilterManager().list_active()
     active_text = " ".join(active).lower()
-    effects = [("nc", "Noise Cancelling"), ("surround", "7.1 Surround"),
-               ("eq", "Equalizer"), ("ec", "Echo Cancellation")]
+    effects = [
+        ("nc", "Noise Cancelling (input)"),
+        ("nc_out", "Noise Cancelling (output)"),
+        ("surround", "7.1 Surround"),
+        ("eq", "Equalizer"),
+    ]
     print(f"\n  {bold('Effects')}")
-    print(dim("  " + "─" * 45))
+    print(dim("  " + "─" * 50))
     for key, label in effects:
         on = key in active_text
         icon = c("[ON] ", Color.GREEN) if on else c("[off]", Color.DIM)
         print(f"  {icon} {c(label, Color.BOLD if on else Color.DIM)}")
-    print(dim("  " + "─" * 45))
+    # Low latency
+    ll = low_latency_enabled()
+    icon = c("[ON] ", Color.GREEN) if ll else c("[off]", Color.DIM)
+    label = "Low Latency Mode"
+    extra = dim(" (quantum=64, rt priority)") if ll else ""
+    print(f"  {icon} {c(label, Color.BOLD if ll else Color.DIM)}{extra}")
+    print(dim("  " + "─" * 50))
+    if not ll:
+        print(dim("  Tip: hifi-suite effect latency on  — for gaming/live monitoring"))
+    print()
 
 
 def print_status(dev, volume, battery):

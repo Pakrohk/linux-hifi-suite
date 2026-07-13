@@ -120,18 +120,38 @@ def smart_defaults(s: State) -> State:
 
 
 def enable_nc(s: State) -> State:
+    """Unified noise filter: input, output, or both."""
     if s.get("error") or not s.get("nc_enabled"):
         return s
-    from .audio import find_rnnoise, render_nc, FilterManager
+    mode = s.get("noise_mode", "input")  # "input", "output", "both"
+    from .audio import find_rnnoise, FilterManager
     plugin = find_rnnoise()
     if not plugin:
         return {**s, "error": "RNNoise not found. Install: noise-suppression-for-voice"}
-    from .audio import find_physical_mic
-    mic = find_physical_mic()
-    mic_node = mic["node_name"] if mic else ""
-    config = render_nc(plugin, mic_node=mic_node)
-    ok = FilterManager().load("nc", config)
-    return s if ok else {**s, "error": "Failed to load NC filter"}
+    from .audio import find_physical_mic, render_nc, render_noise_output
+    fm = FilterManager()
+
+    if mode in ("input", "both"):
+        mic = find_physical_mic()
+        mic_node = mic["node_name"] if mic else ""
+        config = render_nc(plugin, mic_node=mic_node)
+        if not fm.load("nc", config):
+            return {**s, "error": "Failed to load noise filter (input)"}
+
+    if mode in ("output", "both"):
+        dev = s.get("device", {})
+        out_node = dev.get("node_name", "")
+        if not out_node:
+            if mode == "both":
+                return s  # input worked, skip output
+            return {**s, "error": "No output node for noise filtering"}
+        config = render_noise_output(plugin, out_node)
+        if not fm.load("nc_out", config):
+            if mode == "input":
+                return s  # input worked, output failed but not critical
+            return {**s, "error": "Failed to load noise filter (output)"}
+
+    return s
 
 
 def enable_eq(s: State) -> State:
@@ -160,18 +180,11 @@ def enable_surround(s: State) -> State:
 
 
 def enable_ec(s: State) -> State:
+    """Echo cancellation — now unified with NC as noise filter (both directions)."""
     if s.get("error") or not s.get("ec_enabled"):
         return s
-    from .audio import find_physical_mic, render_ec, FilterManager
-    mic = find_physical_mic()
-    if not mic:
-        return {**s, "error": "No physical microphone found"}
-    dev = s.get("device", {})
-    out_node = dev.get("node_name", "")
-    if not out_node:
-        return {**s, "error": "No output node for echo cancellation"}
-    ok = FilterManager().load("ec", render_ec(mic["node_name"], out_node))
-    return s if ok else {**s, "error": "Failed to load EC filter"}
+    # EC is now handled by enable_nc with mode="both"
+    return {**s, "nc_enabled": True, "noise_mode": "both"}
 
 
 def disable_filter(s: State) -> State:
@@ -181,6 +194,18 @@ def disable_filter(s: State) -> State:
     from .audio import FilterManager
     FilterManager().unload(effect)
     return {**s, f"{effect}_enabled": False}
+
+
+def enable_low_latency(s: State) -> State:
+    from .audio import low_latency_enable
+    ok = low_latency_enable()
+    return s if ok else {**s, "error": "Failed to enable low-latency mode"}
+
+
+def disable_low_latency(s: State) -> State:
+    from .audio import low_latency_disable
+    low_latency_disable()
+    return s
 
 
 def set_volume(s: State) -> State:
