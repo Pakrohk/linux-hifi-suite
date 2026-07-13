@@ -1,5 +1,5 @@
 """Audio utilities — volume, filters, battery, profiles, display. All in one file."""
-import json, re, time, subprocess
+import sys, json, re, time, subprocess
 from pathlib import Path
 from typing import Optional, Dict, List
 from .util import _run, PW_CONF, STATE_DIR, LEARNING_DIR, CUSTOM_PROFILES
@@ -529,6 +529,3 @@ def print_status(dev, volume, battery):
         chg = " [CHG]" if battery.get("charging") else ""
         print(f"  {c('Battery:', Color.CYAN)}   {c(f'{level}%', color)}{chg}")
     print(dim("  " + "─" * 45))
-
-
-import sys
