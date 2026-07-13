@@ -14,14 +14,19 @@ from .audio import (success, error, warning, bold, dim, c, Color, device_icon,
                     wpctl_get_volume, wpctl_set_volume, wpctl_set_mute,
                     get_profile, save_profile, delete_profile, list_profiles)
 
-app = typer.Typer(name="hifi-suite", help="Zero-config audio suite for Linux headsets",
-                  no_args_is_help=True)
-vol_app = typer.Typer(help="Volume control", no_args_is_help=True)
-dev_app = typer.Typer(help="Device management", no_args_is_help=True)
-eff_app = typer.Typer(help="Audio effects", no_args_is_help=True)
-prof_app = typer.Typer(help="Headset profiles", no_args_is_help=True)
-daemon_app = typer.Typer(help="Daemon management", no_args_is_help=True)
-noise_app = typer.Typer(help="Noise filtering (input/output/both)", no_args_is_help=True)
+app = typer.Typer(
+    name="hifi-suite",
+    help="Zero-config audio suite for Linux headsets",
+    no_args_is_help=True,
+    add_completion=True,
+    rich_markup_mode="rich",
+)
+vol_app = typer.Typer(help="Volume control: get, set, mute, up, down", no_args_is_help=True)
+dev_app = typer.Typer(help="Device management: list, scan, battery, manage, remove", no_args_is_help=True)
+eff_app = typer.Typer(help="Audio effects: enable, disable, list, latency", no_args_is_help=True)
+prof_app = typer.Typer(help="Headset profiles: list, show, create, delete", no_args_is_help=True)
+daemon_app = typer.Typer(help="Daemon management: start, stop, restart, status", no_args_is_help=True)
+noise_app = typer.Typer(help="Noise filter: input, output, both, off", no_args_is_help=True)
 app.add_typer(vol_app, name="vol")
 app.add_typer(dev_app, name="device")
 app.add_typer(eff_app, name="effect")
