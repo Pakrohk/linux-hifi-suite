@@ -95,9 +95,34 @@ def effects():
     print_effects()
 
 
+@app.command()
+def battery():
+    """Show headset battery level."""
+    st = _detect()
+    if not _ok(st):
+        raise typer.Exit(1)
+    if st.get("battery"):
+        bat = st["battery"]
+        level = bat["level"]
+        color = Color.GREEN if level > 50 else Color.YELLOW if level > 20 else Color.RED
+        chg = " (charging)" if bat.get("charging") else ""
+        typer.echo(f"Battery: {c(str(level) + '%', color)}{chg} [{bat.get('method', '?')}]")
+    else:
+        typer.echo("No battery info available")
+
+
+@app.command(name="devices")
+def devices_cmd():
+    """List all audio devices."""
+    st = run({}, s.list_devices)
+    print_device_table(st.get("devices", []))
+
+
 @app.command(name="select")
 def select_device():
     """Interactive device selector."""
+    st = run({}, s.list_devices)
+    devs = st.get("devices", [])
     if not devs:
         typer.echo(c("  No audio devices found.", Color.YELLOW))
         raise typer.Exit(1)
