@@ -9,6 +9,10 @@ import typer
 from .state import State
 from .pipeline import run
 from . import state as s
+from .audio import (success, error, warning, bold, dim, c, Color, device_icon,
+                    print_banner, print_effects, print_device_table, print_status,
+                    wpctl_get_volume, wpctl_set_volume, wpctl_set_mute,
+                    get_profile, save_profile, delete_profile, list_profiles)
 
 app = typer.Typer(name="hifi-suite", help="Zero-config audio suite for Linux headsets",
                   no_args_is_help=True, add_completion=False)
@@ -32,28 +36,7 @@ def _detect() -> State:
 
 def _ok(st: State) -> bool:
     if st.get("error"):
-        typer.echo(f"Error: {st['error']}", err=True)
-        return False
-    return True
-
-
-# ── Top-level Commands ─────────────────────────────────────────────────────
-
-@app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
-    if ctx.invoked_subcommand is None:
-        from .audio import print_banner
-        print_banner()
-        typer.echo(ctx.parent.get_help() if ctx.parent else ctx.get_help())
-
-
-@app.command()
-def status():
-    """Show device and effects status."""
-    st = _detect()
-    if not _ok(st):
         raise typer.Exit(1)
-    from .audio import print_status, print_effects, wpctl_get_volume
     vol = wpctl_get_volume(st["device"]["id"])
     print_status(st["device"], vol, st.get("battery"))
     print_effects()
@@ -72,7 +55,6 @@ def scan():
 @app.command()
 def auto():
     """Auto-detect and configure everything."""
-    from .audio import print_banner, bold, c, Color, device_icon
     print_banner()
     st = _detect()
     if not _ok(st):
@@ -110,16 +92,12 @@ def setup_cmd():
 @app.command()
 def effects():
     """List effects and status."""
-    from .audio import print_effects as pe
-    pe()
+    print_effects()
 
 
 @app.command(name="select")
 def select_device():
     """Interactive device selector."""
-    from .audio import print_device_table, c, Color, bold
-    st = run({}, s.list_devices)
-    devs = st.get("devices", [])
     if not devs:
         typer.echo(c("  No audio devices found.", Color.YELLOW))
         raise typer.Exit(1)
@@ -152,7 +130,6 @@ def default():
 @app.command()
 def recommend(name: Optional[str] = typer.Argument(None)):
     """Show download recommendations."""
-    from .audio import get_profile
     if not name:
         st = _detect()
         if st.get("error"):
@@ -199,7 +176,6 @@ def vol_mute():
     st = _detect()
     if not _ok(st):
         raise typer.Exit(1)
-    from .audio import wpctl_set_mute
     wpctl_set_mute(st["device"]["id"])
 
 
@@ -208,7 +184,6 @@ def vol_up(amount: int = typer.Argument(5)):
     st = _detect()
     if not _ok(st):
         raise typer.Exit(1)
-    from .audio import wpctl_get_volume, wpctl_set_volume
     cur = wpctl_get_volume(st["device"]["id"])
     if cur is not None:
         wpctl_set_volume(st["device"]["id"], min(1.0, cur + amount / 100.0))
@@ -219,7 +194,6 @@ def vol_down(amount: int = typer.Argument(5)):
     st = _detect()
     if not _ok(st):
         raise typer.Exit(1)
-    from .audio import wpctl_get_volume, wpctl_set_volume
     cur = wpctl_get_volume(st["device"]["id"])
     if cur is not None:
         wpctl_set_volume(st["device"]["id"], max(0.0, cur - amount / 100.0))
@@ -229,7 +203,6 @@ def vol_down(amount: int = typer.Argument(5)):
 
 @dev_app.command(name="list")
 def dev_list(detail: bool = typer.Option(False, "--detail", "-d")):
-    from .audio import print_device_table
     st = run({}, s.list_devices)
     print_device_table(st.get("devices", []))
 
@@ -272,7 +245,6 @@ class EffectName(str, Enum):
 
 @eff_app.command(name="list")
 def eff_list():
-    from .audio import print_effects
     print_effects()
 
 
@@ -303,21 +275,18 @@ def eff_disable(name: EffectName = typer.Argument(...)):
 
 @prof_app.command(name="list")
 def prof_list():
-    from .audio import list_profiles
     for p in list_profiles():
         typer.echo(f"  {p.get('_name', p.get('name', '?'))} ({p.get('brand', '?')})")
 
 
 @prof_app.command(name="show")
 def prof_show(name: str = typer.Argument(...)):
-    from .audio import get_profile
     p = get_profile(name)
     typer.echo(f"Profile: {name} | Brand: {p.get('brand', '?')}")
 
 
 @prof_app.command(name="create")
 def prof_create():
-    from .audio import save_profile
     name = typer.prompt("Headset name")
     brand = typer.prompt("Brand")
     save_profile(name, {"name": name, "brand": brand})
@@ -326,7 +295,6 @@ def prof_create():
 
 @prof_app.command(name="delete")
 def prof_delete(name: str = typer.Argument(...)):
-    from .audio import delete_profile
     if delete_profile(name):
         typer.echo(f"Deleted: {name}")
     else:
