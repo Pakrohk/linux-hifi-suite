@@ -11,7 +11,7 @@
 
 <p align="center">
   <b>Zero-config audio suite for wireless headsets on Linux</b><br/>
-  <sub>Volume · Surround · Noise Filter · EQ · Low Latency · Device Management</sub>
+  <sub>Volume · Surround · Noise Filter · Echo Cancel · EQ · Low Latency · Device Management</sub>
 </p>
 
 <p align="center">
@@ -20,8 +20,10 @@
   <a href="#commands">Commands</a> ·
   <a href="#effects">Effects</a> ·
   <a href="#noise-filter">Noise Filter</a> ·
+  <a href="#echo-cancellation">Echo Cancellation</a> ·
   <a href="#low-latency">Low Latency</a> ·
   <a href="#device-management">Device Management</a> ·
+  <a href="#desktop-widgets">Widgets</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#contributing">Contributing</a>
 </p>
@@ -30,7 +32,7 @@
 
 ## What is HiFi Suite?
 
-HiFi Suite is a **unified audio management tool** for wireless headsets on Linux. It combines volume control, virtual surround sound, noise filtering, equalization, and low-latency mode into a single tool that **works out of the box**.
+HiFi Suite is a **unified audio management tool** for wireless headsets on Linux. It combines volume control, virtual surround sound, noise filtering, echo cancellation, equalization, and low-latency mode into a single tool that **works out of the box**.
 
 ### The Problem
 
@@ -38,10 +40,10 @@ Wireless headsets on Linux have fragmented audio control:
 - Volume sync between ALSA channels is broken on many USB dongles
 - Virtual surround requires manual PipeWire filter chain setup
 - Noise cancellation needs LADSPA plugins + config files
+- Echo cancellation is separate from noise filtering — no way to use both
 - No way to filter noise on incoming audio (other person's side)
 - Low-latency mode requires manual PipeWire quantum configuration
 - Each desktop environment has its own widget — none work cross-DE
-- No way to save per-headset settings
 
 ### The Solution
 
@@ -49,8 +51,9 @@ Wireless headsets on Linux have fragmented audio control:
 hifi-suite auto              # Detect headset, enable filters, start daemon — done
 hifi-suite noise input       # Filter noise from your mic (outgoing)
 hifi-suite noise output      # Filter noise from other side (incoming)
+hifi-suite effect enable ec  # Echo cancellation on your mic (works with NC)
 hifi-suite effect latency on # Low-latency for gaming (~3ms)
-hifi-suite device manage     # See all PipeWire nodes
+hifi-suite reset             # Remove all filters, restore defaults
 ```
 
 **One command. Zero config. Every headset.**
@@ -69,13 +72,16 @@ hifi-suite device manage     # See all PipeWire nodes
 | **Noise filter (input)** | RNNoise on your mic — outgoing audio cleaned |
 | **Noise filter (output)** | RNNoise on incoming audio — other person's noise removed |
 | **Noise filter (both)** | Both directions simultaneously |
+| **Echo cancellation** | Independent EC toggle — works alongside noise filter |
 | **Convolution EQ** | Apply AutoEq `.wav` files as PipeWire filter chains |
 | **Low-latency mode** | quantum=64 + RT priority — ~3ms latency for gaming |
 | **Device management** | List all PipeWire nodes, remove virtual devices |
+| **Reset** | Remove all filters and restore PipeWire defaults |
 | **Custom profiles** | Per-headset JSON settings (EQ, SOFA, volume) |
 | **Learning system** | Remembers successful configs per device, auto-applies next time |
-| **3 DE widgets** | KDE Plasma 6, GNOME Shell 46+, Cinnamon |
+| **3 DE widgets** | KDE Plasma 6, GNOME Shell 46+, Cinnamon — with noise/latency/reset controls |
 | **Systemd daemon** | Auto-start, persistent volume, socket-based control |
+| **Tab completion** | Full shell completion for all commands and subcommands |
 
 ---
 
@@ -110,7 +116,7 @@ makepkg -si
 
 | Optional | Purpose |
 |----------|---------|
-| `noise-suppression-for-voice` | RNNoise LADSPA plugin (recommended for noise filter) |
+| `noise-suppression-for-voice` | RNNoise LADSPA plugin (recommended for noise filter + EC) |
 | `virtual-surround-manager` | Virtual 7.1/5.1 surround with HeSuVi WAV |
 | `realtime-privileges` | Low-latency audio (RT priority) |
 | `plasma-desktop` | KDE Plasma widget |
@@ -135,12 +141,18 @@ hifi-suite vol mute       # Toggle mute
 # 4. Enable noise filter
 hifi-suite noise input    # Clean your mic (outgoing)
 
-# 5. Enable low-latency for gaming
+# 5. Enable echo cancellation (works alongside noise filter)
+hifi-suite effect enable ec
+
+# 6. Enable low-latency for gaming
 hifi-suite effect latency on
 
-# 6. Check status
+# 7. Check status
 hifi-suite effect list    # See active effects + latency
 hifi-suite battery        # Show headset battery
+
+# 8. Reset everything when needed
+hifi-suite reset          # Remove all filters, restore defaults
 ```
 
 ---
@@ -159,6 +171,7 @@ hifi-suite effects        # List all effects and status
 hifi-suite default        # Set headset as default output
 hifi-suite select         # Interactive device selector
 hifi-suite recommend      # Show download recommendations
+hifi-suite reset          # Remove all filters, restore PipeWire defaults
 ```
 
 ### Volume (`hifi-suite vol`)
@@ -188,9 +201,10 @@ hifi-suite device default        # Set headset as default output
 ```bash
 hifi-suite effect list              # List effects and status
 hifi-suite effect enable nc         # Enable noise filter (input)
+hifi-suite effect enable ec         # Enable echo cancellation (works with NC)
 hifi-suite effect enable surround   # Enable 7.1 surround
 hifi-suite effect enable eq         # Enable convolution EQ
-hifi-suite effect enable ec         # Enable noise filter (both directions)
+hifi-suite effect disable ec        # Disable echo cancellation
 hifi-suite effect latency on        # Enable low-latency mode
 hifi-suite effect latency off       # Disable low-latency mode
 ```
@@ -222,13 +236,21 @@ hifi-suite daemon restart   # Restart
 hifi-suite daemon status    # Check if running
 ```
 
+### Reset
+
+```bash
+hifi-suite reset            # Remove ALL filters and restore defaults
+```
+
+Removes: noise filters (NC/NC_out), echo cancellation (EC), surround, EQ, low-latency config. PipeWire restarts automatically.
+
 ---
 
 ## Effects
 
 ### Noise Filter
 
-Unified noise filtering that works in **3 modes**:
+Noise filtering that works in **3 modes**:
 
 ```bash
 hifi-suite noise input     # Clean YOUR mic (outgoing)
@@ -246,6 +268,26 @@ hifi-suite noise off       # Disable all
 ```bash
 sudo pacman -S noise-suppression-for-voice  # RNNoise LADSPA plugin
 ```
+
+### Echo Cancellation
+
+Independent echo cancellation that **works alongside the noise filter**. Both can be active at the same time on the same microphone.
+
+```bash
+hifi-suite effect enable ec     # Enable echo cancellation
+hifi-suite effect disable ec    # Disable echo cancellation
+```
+
+**How it works:**
+- Uses PipeWire's `module-echo-cancel` on your physical microphone
+- Cancels echo/feedback from the speaker into the mic
+- **Independent of NC** — you can have NC (noise filter) + EC (echo cancel) simultaneously
+- EC handles echo, NC handles background noise — different problems, same mic
+
+**When to use EC:**
+- Speaker audio leaks into your mic (open-back headphones, speakers)
+- Other person hears their own voice echoed back
+- Video call echo issues
 
 ### Virtual Surround
 
@@ -300,13 +342,14 @@ hifi-suite effect latency off   # Disable (default ~20ms)
 $ hifi-suite effects
 
   Effects
-  ──────────────────────────────────────────────────
-  [ON]  Noise Cancelling (input)
-  [off] Noise Cancelling (output)
+  ────────────────────────────────────────────────────
+  [ON]  Noise Filter — Input (your mic, outgoing)
+  [off] Noise Filter — Output (other person, incoming)
+  [ON]  Echo Cancellation — Input (your mic, reduces echo)
   [off] 7.1 Surround
   [off] Equalizer
   [ON]  Low Latency Mode (quantum=64, rt priority)
-  ──────────────────────────────────────────────────
+  ────────────────────────────────────────────────────
   Tip: hifi-suite effect latency on  — for gaming/live monitoring
 ```
 
@@ -326,17 +369,16 @@ hifi-suite device manage
   PipeWire Nodes
   ─────────────────────────────────────────────────────────────
 
-  Physical Devices
+  Physical Devices (hardware)
   ······························································
-    46  H888 Wireless headset Analog Stereo
-    59  Ellesmere HDMI Audio [Radeon RX 470/480/570/580/590]
-    71  USB Audio Device Analog Stereo
-    73  Built-in Audio Digital Stereo (IEC958)
+    46  H888 Wireless headset     [permanent]  Hardware Device
+    71  USB Audio Device          [permanent]  Hardware Device
+    73  Built-in Audio            [permanent]  Hardware Device
 
-  Active Filters
+  Active Filters (hifi-suite)
   ······························································
-    34  capture.hifi_rnnoise                          [del]
-    45  hifi_rnnoise_source                           [del]
+    34  capture.hifi_rnnoise      [removable]  NC Filter (noise cancellation — input)
+    45  hifi_rnnoise_source       [removable]  NC Source (virtual mic output)
 
   Active Streams
   ······························································
@@ -344,7 +386,7 @@ hifi-suite device manage
    101  Firefox
 
   ─────────────────────────────────────────────────────────────
-  [del] = can be removed | Use 'hifi-suite device remove <id>'
+  hifi-suite device remove <id>  — remove a [removable] node
 ```
 
 **Remove virtual devices:**
@@ -352,6 +394,45 @@ hifi-suite device manage
 hifi-suite device remove 34    # Remove a filter node
 hifi-suite device remove 45    # Remove a virtual source
 ```
+
+---
+
+## Desktop Widgets
+
+All three widgets support the full feature set:
+
+| Feature | KDE Plasma 6 | GNOME Shell 46+ | Cinnamon |
+|---------|:---:|:---:|:---:|
+| Volume control (slider + scroll) | Yes | Yes | Yes |
+| Mute toggle | Yes | Yes | Yes |
+| Battery display | Yes | Yes | Yes |
+| Noise Filter (Input/Output/Both) | Yes | Yes | Yes |
+| Echo Cancellation toggle | Yes | Yes | Yes |
+| 7.1 Surround toggle | Yes | Yes | Yes |
+| EQ toggle | Yes | Yes | Yes |
+| Low Latency toggle | Yes | Yes | Yes |
+| Reset All button | Yes | Yes | Yes |
+
+### KDE Plasma 6
+
+Auto-installed with the package. Add to panel:
+1. Right-click panel → **Add Widgets**
+2. Search **"HiFi Suite"**
+3. Add to panel
+
+### GNOME Shell 46+
+
+Auto-installed. Enable:
+```bash
+gnome-extensions enable hifi-suite@hifi-suite
+```
+
+### Cinnamon
+
+Auto-installed. Add to panel:
+1. Right-click panel → **Applets**
+2. Find **"HiFi Suite"**
+3. Add to panel
 
 ---
 
@@ -417,6 +498,7 @@ result = run(
     {"volume": 75},
     s.detect_device,     # State → State (adds device info)
     s.enable_nc,         # State → State (enables noise filter)
+    s.enable_ec,         # State → State (enables echo cancellation)
     s.set_volume,        # State → State (sets volume)
     after=s.record_outcome,  # Learning hook
 )
@@ -481,45 +563,43 @@ def my_feature():
 hifi-suite effect my-feature    # Your new command works!
 ```
 
-### Real Example: How Noise Filter Was Added
+### Real Example: How Echo Cancellation Was Added
 
 **Step 1** — `state.py`:
 ```python
-def enable_nc(s: State) -> State:
-    if s.get("error") or not s.get("nc_enabled"):
+def enable_ec(s: State) -> State:
+    """Enable echo cancellation on the physical mic (independent of NC)."""
+    if s.get("error") or not s.get("ec_enabled"):
         return s
-    mode = s.get("noise_mode", "input")  # "input", "output", "both"
-    from .audio import find_rnnoise, FilterManager
-    plugin = find_rnnoise()
-    if not plugin:
-        return {**s, "error": "RNNoise not found"}
-    from .audio import find_physical_mic, render_nc, render_noise_output
-    fm = FilterManager()
-    if mode in ("input", "both"):
-        mic = find_physical_mic()
-        config = render_nc(plugin, mic_node=mic["node_name"] if mic else "")
-        fm.load("nc", config)
-    if mode in ("output", "both"):
-        out_node = s.get("device", {}).get("node_name", "")
-        config = render_noise_output(plugin, out_node)
-        fm.load("nc_out", config)
-    return s
+    from .audio import find_physical_mic, render_ec, FilterManager
+    mic = find_physical_mic()
+    if not mic:
+        return {**s, "error": "No physical microphone found"}
+    dev = s.get("device", {})
+    out_node = dev.get("node_name", "")
+    if not out_node:
+        return {**s, "error": "No output node for echo cancellation"}
+    config = render_ec(mic["node_name"], out_node)
+    ok = FilterManager().load("ec", config)
+    return s if ok else {**s, "error": "Failed to load echo cancellation"}
 ```
 
 **Step 2** — `cli.py`:
 ```python
-@noise_app.command(name="input")
-def noise_input():
-    """Enable noise cancellation on your microphone (outgoing)."""
+@eff_app.command(name="enable")
+def eff_enable(name: EffectName = typer.Argument(...)):
+    """Enable an audio effect. EC works alongside NC noise filter."""
     st = run({}, s.detect_device)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    st = run({**st, "nc_enabled": True, "noise_mode": "input"}, s.enable_nc)
+    proc = {"nc": s.enable_nc, "surround": s.enable_surround,
+            "eq": s.enable_eq, "ec": s.enable_ec}[name.value]
+    st = run({**st, f"{name.value}_enabled": True}, proc, after=s.record_outcome)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    typer.echo("Noise filter enabled on input (mic)")
+    typer.echo(f"Enabled: {name.value}")
 ```
 
 ### Code Style Rules
@@ -549,12 +629,12 @@ python3 hifi-suite auto
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `state.py` | ~260 | State TypedDict + all processors |
+| `state.py` | ~280 | State TypedDict + all processors |
 | `pipeline.py` | ~35 | `run()` and `compose()` |
-| `cli.py` | ~450 | Typer CLI commands |
+| `cli.py` | ~480 | Typer CLI commands |
 | `daemon.py` | ~190 | Unix socket daemon |
 | `device.py` | ~125 | Device detection |
-| `audio.py` | ~660 | Volume, filters, battery, profiles, display |
+| `audio.py` | ~700 | Volume, filters, battery, profiles, display |
 | `util.py` | ~20 | Shared subprocess runner |
 
 ### Testing
