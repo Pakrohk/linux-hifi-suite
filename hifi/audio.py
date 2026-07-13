@@ -101,37 +101,55 @@ def pw_list_nodes() -> list:
         desc = props.get("node.description", "")
         mc = props.get("media.class", "")
         node_id = node.get("id", "")
-        node_type = node.get("type", "")
 
         if not name or not node_id:
             continue
 
-        # Determine if virtual
-        is_virtual = False
-        is_filter = False
-        is_stream = False
+        # Skip internal PipeWire nodes
+        skip_names = ("Dummy-Driver", "Freewheel-Driver", "Midi-Bridge", "bluez_midi")
+        if any(s in name for s in skip_names) or any(s in desc for s in skip_names):
+            continue
+
+        # Determine category and human-readable label
+        category = "device"
+        label = ""
+        can_delete = False
 
         if "Stream/" in mc:
-            is_stream = True
-        elif "filter" in name.lower() or "hifi_" in name.lower() or "rnnoise" in name.lower():
-            is_filter = True
-        elif name.startswith("alsa_") or name.startswith("bluez_"):
-            is_virtual = False  # real device
-        elif " Dummy" in name or "Freewheel" in name or "Midi-Bridge" in name:
-            continue  # skip internal PipeWire nodes
-        elif not name.startswith("alsa_") and not name.startswith("bluez_"):
-            # No alsa/bluez prefix = likely virtual
-            is_virtual = True
-
-        # Category
-        if is_stream:
             category = "stream"
-        elif is_filter:
+            label = "Stream"
+        elif "rnnoise" in name.lower() or "noise cancelling" in desc.lower():
             category = "filter"
-        elif is_virtual:
-            category = "virtual"
-        else:
+            label = "NC Filter (noise cancellation — input)"
+            can_delete = True
+        elif "hifi_rnnoise" in name.lower():
+            category = "filter"
+            label = "NC Source (virtual mic output)"
+            can_delete = True
+        elif "filtered_output" in name.lower() or "noise filtered" in desc.lower():
+            category = "filter"
+            label = "NC Filter (noise cancellation — output)"
+            can_delete = True
+        elif "hifi_eq" in name.lower() or "HiFi EQ" in desc:
+            category = "filter"
+            label = "EQ Filter (convolution equalizer)"
+            can_delete = True
+        elif "hifi_spatializer" in name.lower() or "Surround" in desc:
+            category = "filter"
+            label = "Surround Filter (virtual spatial audio)"
+            can_delete = True
+        elif "hifi_ec" in name.lower() or "Echo Cancelled" in desc:
+            category = "filter"
+            label = "EC Filter (echo cancellation)"
+            can_delete = True
+        elif name.startswith("alsa_") or name.startswith("bluez_"):
             category = "device"
+            label = "Hardware Device"
+        else:
+            # No alsa/bluez prefix = virtual
+            category = "virtual"
+            label = "Virtual Device"
+            can_delete = True
 
         nodes.append({
             "id": str(node_id),
@@ -139,7 +157,8 @@ def pw_list_nodes() -> list:
             "description": desc,
             "media_class": mc,
             "category": category,
-            "can_delete": is_virtual or is_filter,
+            "label": label,
+            "can_delete": can_delete,
         })
 
     return nodes
@@ -149,6 +168,48 @@ def pw_destroy_node(node_id: str) -> bool:
     """Destroy a PipeWire node by ID (only works for virtual/filter nodes)."""
     r = _run(["pw-cli", "destroy", str(node_id)])
     return r.returncode == 0
+
+
+def reset_all_filters() -> dict:
+    """Remove ALL hifi-suite filters, low-latency mode, and restore defaults.
+
+    Returns: {"removed": [...], "errors": [...]}
+    """
+    removed = []
+    errors = []
+
+    # 1. Remove all filter configs from pipewire.conf.d
+    if PW_DROPIN.exists():
+        for f in PW_DROPIN.glob("hifi-*.conf"):
+            try:
+                f.unlink()
+                removed.append(f.name)
+            except Exception as e:
+                errors.append(f"{f.name}: {e}")
+
+    # 2. Remove low-latency config
+    if LOW_LATENCY_CONF.exists():
+        try:
+            LOW_LATENCY_CONF.unlink()
+            removed.append("hifi-low-latency.conf")
+        except Exception as e:
+            errors.append(f"hifi-low-latency.conf: {e}")
+
+    # 3. Remove legacy filter configs
+    legacy_dir = PW_CONF / "filter-chain.conf.d"
+    if legacy_dir.exists():
+        for f in legacy_dir.glob("hifi-*.conf"):
+            try:
+                f.unlink()
+                removed.append(f"legacy/{f.name}")
+            except Exception as e:
+                errors.append(f"legacy/{f.name}: {e}")
+
+    # 4. Restart PipeWire to apply changes
+    if removed:
+        _restart_pw()
+
+    return {"removed": removed, "errors": errors}
 
 
 def find_physical_mic() -> Optional[Dict]:
@@ -650,13 +711,13 @@ def print_effects(active=None):
         active = FilterManager().list_active()
     active_text = " ".join(active).lower()
     effects = [
-        ("nc", "Noise Cancelling (input)"),
-        ("nc_out", "Noise Cancelling (output)"),
+        ("nc", "Noise Filter — Input (your mic, outgoing)"),
+        ("nc_out", "Noise Filter — Output (other person, incoming)"),
         ("surround", "7.1 Surround"),
         ("eq", "Equalizer"),
     ]
     print(f"\n  {bold('Effects')}")
-    print(dim("  " + "─" * 50))
+    print(dim("  " + "─" * 55))
     for key, label in effects:
         on = key in active_text
         icon = c("[ON] ", Color.GREEN) if on else c("[off]", Color.DIM)
@@ -667,7 +728,7 @@ def print_effects(active=None):
     label = "Low Latency Mode"
     extra = dim(" (quantum=64, rt priority)") if ll else ""
     print(f"  {icon} {c(label, Color.BOLD if ll else Color.DIM)}{extra}")
-    print(dim("  " + "─" * 50))
+    print(dim("  " + "─" * 55))
     if not ll:
         print(dim("  Tip: hifi-suite effect latency on  — for gaming/live monitoring"))
     print()
@@ -694,22 +755,22 @@ def print_status(dev, volume, battery):
 
 
 def print_node_table(nodes):
-    """Print all PipeWire nodes in a categorized table."""
+    """Print all PipeWire nodes in a categorized table with clear labels."""
     if not nodes:
         print(warning("  No nodes found."))
         return
 
-    categories = {
-        "device": ("Physical Devices", Color.GREEN),
-        "virtual": ("Virtual Devices", Color.YELLOW),
-        "filter": ("Active Filters", Color.CYAN),
-        "stream": ("Active Streams", Color.DIM),
-    }
+    categories = [
+        ("device", "Physical Devices (hardware)", Color.GREEN),
+        ("virtual", "Virtual Devices (software-created)", Color.YELLOW),
+        ("filter", "Active Filters (hifi-suite)", Color.CYAN),
+        ("stream", "Active Streams (apps using audio)", Color.DIM),
+    ]
 
     print(f"\n  {bold('PipeWire Nodes')}")
     print(dim("  " + "─" * 65))
 
-    for cat_key, (cat_label, cat_color) in categories.items():
+    for cat_key, cat_label, cat_color in categories:
         cat_nodes = [n for n in nodes if n["category"] == cat_key]
         if not cat_nodes:
             continue
@@ -718,10 +779,14 @@ def print_node_table(nodes):
         for n in cat_nodes:
             nid = c(n["id"], Color.CYAN)
             name = n["description"] or n["name"]
-            if len(name) > 40:
-                name = name[:37] + "..."
-            delete_hint = c(" [del]", Color.RED) if n["can_delete"] else ""
-            print(f"  {nid:>5}  {name:<40}{delete_hint}")
+            if len(name) > 35:
+                name = name[:32] + "..."
+            label = n.get("label", "")
+            if n["can_delete"]:
+                badge = c("[removable]", Color.RED)
+            else:
+                badge = c("[permanent]", Color.DIM)
+            print(f"  {nid:>5}  {name:<35} {badge} {dim(label)}")
 
     print(dim("\n  " + "─" * 65))
-    print(dim("  [del] = can be removed | Use 'hifi-suite device remove <id>'"))
+    print(dim("  hifi-suite device remove <id>  — remove a [removable] node"))

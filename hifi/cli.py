@@ -98,6 +98,25 @@ def effects():
 
 
 @app.command()
+def reset():
+    """Remove ALL hifi-suite filters and restore PipeWire defaults.
+
+    Removes: noise filters, surround, EQ, low-latency mode.
+    PipeWire will restart after reset.
+    Use before applying a new profile or running 'auto'.
+    """
+    st = run({}, s.reset_all)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    count = st.get("reset_count", 0)
+    if count:
+        typer.echo(f"Reset complete: {count} config(s) removed, PipeWire restarted")
+    else:
+        typer.echo("Nothing to reset — no hifi-suite configs found")
+
+
+@app.command()
 def battery():
     """Show headset battery level."""
     st = _detect()
@@ -400,7 +419,11 @@ def noise_cb(ctx: typer.Context):
 
 @noise_app.command(name="input")
 def noise_input():
-    """Enable noise cancellation on your microphone (outgoing)."""
+    """Enable noise filter on your microphone (outgoing audio).
+
+    Filters noise from YOUR mic using RNNoise.
+    Also handles echo cancellation for your mic.
+    """
     st = run({}, s.detect_device)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
@@ -409,13 +432,18 @@ def noise_input():
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    typer.echo("Noise filter enabled on input (mic)")
-    typer.echo("Select 'Noise Cancelling Mic' as your input source.")
+    typer.echo("Noise filter enabled on INPUT (your mic)")
+    typer.echo("  → Filters: background noise + echo from your mic")
+    typer.echo("  → Select 'Noise Cancelling Mic' as your input source")
 
 
 @noise_app.command(name="output")
 def noise_output():
-    """Enable noise cancellation on output (incoming audio from other side)."""
+    """Enable noise filter on incoming audio (other person's side).
+
+    Filters noise from the OTHER person's audio.
+    Useful if the other side has background noise.
+    """
     st = run({}, s.detect_device)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
@@ -424,13 +452,18 @@ def noise_output():
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    typer.echo("Noise filter enabled on output")
-    typer.echo("Select 'Noise Filtered Output' as your output.")
+    typer.echo("Noise filter enabled on OUTPUT (other person's audio)")
+    typer.echo("  → Filters: noise from incoming audio")
+    typer.echo("  → Select 'Noise Filtered Output' as your output")
 
 
 @noise_app.command(name="both")
 def noise_both():
-    """Enable noise cancellation on both input AND output."""
+    """Enable noise filter on BOTH input AND output.
+
+    Filters noise from your mic AND incoming audio.
+    Full noise protection for calls/meetings.
+    """
     st = run({}, s.detect_device)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
@@ -439,7 +472,9 @@ def noise_both():
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
-    typer.echo("Noise filter enabled on both input and output")
+    typer.echo("Noise filter enabled on BOTH directions")
+    typer.echo("  → Input:  Filters noise + echo from your mic")
+    typer.echo("  → Output: Filters noise from other person's audio")
 
 
 @noise_app.command(name="off")

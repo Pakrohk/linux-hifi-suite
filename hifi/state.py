@@ -208,6 +208,19 @@ def disable_low_latency(s: State) -> State:
     return s
 
 
+def reset_all(s: State) -> State:
+    """Remove ALL hifi-suite filters, low-latency, and restore defaults."""
+    from .audio import reset_all_filters
+    result = reset_all_filters()
+    removed = result.get("removed", [])
+    errors = result.get("errors", [])
+    if errors:
+        return {**s, "error": "; ".join(errors)}
+    if removed:
+        return {**s, "reset_done": True, "reset_count": len(removed)}
+    return {**s, "reset_done": True, "reset_count": 0}
+
+
 def set_volume(s: State) -> State:
     vol = s.get("volume")
     dev = s.get("device")
