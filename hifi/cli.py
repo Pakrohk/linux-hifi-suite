@@ -232,6 +232,24 @@ def dev_list(detail: bool = typer.Option(False, "--detail", "-d")):
     print_device_table(st.get("devices", []))
 
 
+@dev_app.command(name="manage")
+def dev_manage():
+    """List all PipeWire nodes (real, virtual, filters, streams)."""
+    from .audio import print_node_table
+    st = run({}, s.list_all_nodes)
+    print_node_table(st.get("nodes", []))
+
+
+@dev_app.command(name="remove")
+def dev_remove(node_id: str = typer.Argument(..., help="Node ID to remove")):
+    """Remove a virtual PipeWire node."""
+    st = run({"node_id": node_id}, s.destroy_node)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Removed node: {node_id}")
+
+
 @dev_app.command(name="scan")
 def dev_scan():
     st = _detect()

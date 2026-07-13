@@ -31,6 +31,77 @@ def wpctl_set_default(node_id: str) -> bool:
     return _run(["wpctl", "set-default", node_id]).returncode == 0
 
 
+# ── PipeWire Node Management ──────────────────────────────────────────────
+
+def pw_list_nodes() -> list:
+    """List all PipeWire nodes with type, name, description, and whether they're virtual."""
+    import json as _json
+    r = _run(["pw-dump"])
+    if r.returncode != 0:
+        return []
+    try:
+        data = _json.loads(r.stdout)
+    except Exception:
+        return []
+
+    nodes = []
+    for node in data:
+        info = node.get("info", {})
+        props = info.get("props", {})
+        name = props.get("node.name", "")
+        desc = props.get("node.description", "")
+        mc = props.get("media.class", "")
+        node_id = node.get("id", "")
+        node_type = node.get("type", "")
+
+        if not name or not node_id:
+            continue
+
+        # Determine if virtual
+        is_virtual = False
+        is_filter = False
+        is_stream = False
+
+        if "Stream/" in mc:
+            is_stream = True
+        elif "filter" in name.lower() or "hifi_" in name.lower() or "rnnoise" in name.lower():
+            is_filter = True
+        elif name.startswith("alsa_") or name.startswith("bluez_"):
+            is_virtual = False  # real device
+        elif " Dummy" in name or "Freewheel" in name or "Midi-Bridge" in name:
+            continue  # skip internal PipeWire nodes
+        elif not name.startswith("alsa_") and not name.startswith("bluez_"):
+            # No alsa/bluez prefix = likely virtual
+            is_virtual = True
+
+        # Category
+        if is_stream:
+            category = "stream"
+        elif is_filter:
+            category = "filter"
+        elif is_virtual:
+            category = "virtual"
+        else:
+            category = "device"
+
+        nodes.append({
+            "id": str(node_id),
+            "name": name,
+            "description": desc,
+            "media_class": mc,
+            "category": category,
+            "can_delete": is_virtual or is_filter,
+        })
+
+    return nodes
+
+
+def pw_destroy_node(node_id: str) -> bool:
+    """Destroy a PipeWire node by ID (only works for virtual/filter nodes)."""
+    r = _run(["pw-cli", "destroy", str(node_id)])
+    return r.returncode == 0
+
+
 def find_physical_mic() -> Optional[Dict]:
     r = _run(["wpctl", "status"])
     if r.returncode != 0:
@@ -529,3 +600,37 @@ def print_status(dev, volume, battery):
         chg = " [CHG]" if battery.get("charging") else ""
         print(f"  {c('Battery:', Color.CYAN)}   {c(f'{level}%', color)}{chg}")
     print(dim("  " + "─" * 45))
+
+
+def print_node_table(nodes):
+    """Print all PipeWire nodes in a categorized table."""
+    if not nodes:
+        print(warning("  No nodes found."))
+        return
+
+    categories = {
+        "device": ("Physical Devices", Color.GREEN),
+        "virtual": ("Virtual Devices", Color.YELLOW),
+        "filter": ("Active Filters", Color.CYAN),
+        "stream": ("Active Streams", Color.DIM),
+    }
+
+    print(f"\n  {bold('PipeWire Nodes')}")
+    print(dim("  " + "─" * 65))
+
+    for cat_key, (cat_label, cat_color) in categories.items():
+        cat_nodes = [n for n in nodes if n["category"] == cat_key]
+        if not cat_nodes:
+            continue
+        print(f"\n  {c(cat_label, cat_color)}")
+        print(dim("  " + "·" * 60))
+        for n in cat_nodes:
+            nid = c(n["id"], Color.CYAN)
+            name = n["description"] or n["name"]
+            if len(name) > 40:
+                name = name[:37] + "..."
+            delete_hint = c(" [del]", Color.RED) if n["can_delete"] else ""
+            print(f"  {nid:>5}  {name:<40}{delete_hint}")
+
+    print(dim("\n  " + "─" * 65))
+    print(dim("  [del] = can be removed | Use 'hifi-suite device remove <id>'"))

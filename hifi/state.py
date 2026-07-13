@@ -59,6 +59,24 @@ def list_devices(s: State) -> State:
     return {**s, "devices": list_all_devices()}
 
 
+def list_all_nodes(s: State) -> State:
+    """List all PipeWire nodes — real, virtual, filters, streams."""
+    from .audio import pw_list_nodes
+    return {**s, "nodes": pw_list_nodes()}
+
+
+def destroy_node(s: State) -> State:
+    """Destroy a virtual PipeWire node by ID."""
+    node_id = s.get("node_id", "")
+    if not node_id:
+        return {**s, "error": "No node_id provided"}
+    from .audio import pw_destroy_node
+    ok = pw_destroy_node(node_id)
+    if ok:
+        return {**s, "destroyed": node_id}
+    return {**s, "error": f"Failed to destroy node {node_id}"}
+
+
 def learn_device(s: State) -> State:
     fp = s.get("fingerprint", "")
     if not fp:
