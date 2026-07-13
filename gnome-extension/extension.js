@@ -97,7 +97,7 @@ class HiFiIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(effectsSub);
 
         this._effectItems = {};
-        ['surround', 'eq'].forEach(f => {
+        ['surround', 'eq', 'ec'].forEach(f => {
             let item = new PopupMenu.PopupSwitchMenuItem(f.toUpperCase(), false);
             item.connect('toggled', (_, on) => this._toggleEffect(f, on));
             effectsSub.menu.addMenuItem(item);
@@ -252,7 +252,7 @@ class HiFiIndicator extends PanelMenu.Button {
             if (line.includes('Noise Filter') && line.includes('Input')) ncIn = line.includes('[ON]');
             if (line.includes('Noise Filter') && line.includes('Output')) ncOut = line.includes('[ON]');
             if (line.includes('Low Latency')) this._lowLatency = line.includes('[ON]');
-            ['surround', 'eq'].forEach(f => {
+            ['surround', 'eq', 'ec'].forEach(f => {
                 let re = new RegExp('\\b' + f + '\\b.*\\[ON\\]', 'i');
                 if (re.test(line) && this._effectItems[f]) this._effectItems[f].setToggleState(true);
                 let reOff = new RegExp('\\b' + f + '\\b.*\\[off\\]', 'i');

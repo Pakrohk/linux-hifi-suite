@@ -81,9 +81,10 @@ PlasmoidItem {
                 var ncOut = lines[i].includes("Noise Filter") && lines[i].includes("Output")
                 var surr = lines[i].includes("7.1 Surround")
                 var eq = lines[i].includes("Equalizer")
-
+                var ec = lines[i].includes("Echo Cancellation")
                 if (ncIn) effectStates["nc_in"] = lines[i].includes("[ON]")
                 if (ncOut) effectStates["nc_out"] = lines[i].includes("[ON]")
+                if (ec) effectStates["ec"] = lines[i].includes("[ON]")
                 if (surr) effectStates["surround"] = lines[i].includes("[ON]")
                 if (eq) effectStates["eq"] = lines[i].includes("[ON]")
             }
@@ -415,6 +416,18 @@ PlasmoidItem {
                 checkable: true
                 checked: effectStates["eq"] || false
                 onClicked: toggleEffect("eq")
+            }
+
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "Echo Cancel"
+                icon.name: "microphone"
+                checkable: true
+                checked: effectStates["ec"] || false
+                onClicked: toggleEffect("ec")
+                PlasmaComponents3.ToolTip {
+                    text: "Cancel echo on your mic (works with noise filter)"
+                }
             }
         }
 

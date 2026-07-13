@@ -713,6 +713,7 @@ def print_effects(active=None):
     effects = [
         ("nc", "Noise Filter — Input (your mic, outgoing)"),
         ("nc_out", "Noise Filter — Output (other person, incoming)"),
+        ("ec", "Echo Cancellation — Input (your mic, reduces echo)"),
         ("surround", "7.1 Surround"),
         ("eq", "Equalizer"),
     ]

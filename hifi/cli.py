@@ -309,7 +309,7 @@ def dev_default():
 # ── Effect Subcommands ─────────────────────────────────────────────────────
 
 class EffectName(str, Enum):
-    NC = "nc"; SURROUND = "surround"; EQ = "eq"
+    NC = "nc"; SURROUND = "surround"; EQ = "eq"; EC = "ec"
 
 
 @eff_app.command(name="list")
@@ -319,13 +319,13 @@ def eff_list():
 
 @eff_app.command(name="enable")
 def eff_enable(name: EffectName = typer.Argument(...)):
-    """Enable an audio effect."""
+    """Enable an audio effect. EC (echo cancellation) works alongside NC (noise filter)."""
     st = run({}, s.detect_device)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
     proc = {"nc": s.enable_nc, "surround": s.enable_surround,
-            "eq": s.enable_eq}[name.value]
+            "eq": s.enable_eq, "ec": s.enable_ec}[name.value]
     st = run({**st, f"{name.value}_enabled": True}, proc, after=s.record_outcome)
     if st.get("error"):
         typer.echo(f"Error: {st['error']}", err=True)
@@ -335,6 +335,7 @@ def eff_enable(name: EffectName = typer.Argument(...)):
         "nc": "Use 'hifi-suite noise input/output/both' for directional noise filtering",
         "surround": "Select the virtual surround sink as your output.",
         "eq": "Select 'HiFi EQ' as your output.",
+        "ec": "Echo cancellation on your mic. Works alongside NC noise filter.",
     }
     if name.value in hints:
         typer.echo(f"  → {hints[name.value]}")

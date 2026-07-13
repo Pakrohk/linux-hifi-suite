@@ -1,0 +1,18 @@
+[Desktop Entry]
+Name=HiFi Suite
+Comment=Universal audio control for any headset — volume, effects, noise filter, battery
+Encoding=UTF-8
+Icon=audio-headphones
+Type=Service
+
+X-Plasma-API=declarativeappletscript
+X-Plasma-MainScript=ui/main.qml
+X-Plasma-Minimum-Version=6.0
+
+X-KDE-PluginInfo-Author=Pakrohk
+X-KDE-PluginInfo-Category=Multimedia
+X-KDE-PluginInfo-Email=pakrohk@gmail.com
+X-KDE-PluginInfo-Name=hifi-suite
+X-KDE-PluginInfo-Version=3.0
+X-KDE-PluginInfo-Website=https://github.com/Pakrohk/linux-hifi-suite
+X-KDE-ServiceTypes=Plasma/Applet

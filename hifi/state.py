@@ -154,6 +154,23 @@ def enable_nc(s: State) -> State:
     return s
 
 
+def enable_ec(s: State) -> State:
+    """Enable echo cancellation on the physical mic (independent of NC)."""
+    if s.get("error") or not s.get("ec_enabled"):
+        return s
+    from .audio import find_physical_mic, render_ec, FilterManager
+    mic = find_physical_mic()
+    if not mic:
+        return {**s, "error": "No physical microphone found for echo cancellation"}
+    dev = s.get("device", {})
+    out_node = dev.get("node_name", "")
+    if not out_node:
+        return {**s, "error": "No output node for echo cancellation"}
+    config = render_ec(mic["node_name"], out_node)
+    ok = FilterManager().load("ec", config)
+    return s if ok else {**s, "error": "Failed to load echo cancellation filter"}
+
+
 def enable_eq(s: State) -> State:
     if s.get("error") or not s.get("eq_enabled"):
         return s

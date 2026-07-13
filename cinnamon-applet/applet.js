@@ -87,7 +87,7 @@ MyApplet.prototype = {
         this._menu.addMenuItem(this._effectsItem);
 
         this._effectItems = {};
-        ["surround", "eq"].forEach(Lang.bind(this, function(f) {
+        ["surround", "eq", "ec"].forEach(Lang.bind(this, function(f) {
             let item = new PopupMenu.PopupSwitchMenuItem(f.toUpperCase(), false);
             item.connect("toggled", Lang.bind(this, function(_, on) {
                 this._cmd(on ? "effect enable " + f : "effect disable " + f);
@@ -214,7 +214,7 @@ MyApplet.prototype = {
             if (lines[i].indexOf("Noise Filter") >= 0 && lines[i].indexOf("Output") >= 0) ncOut = lines[i].indexOf("[ON]") >= 0;
             if (lines[i].indexOf("Low Latency") >= 0) this._lowLatency = lines[i].indexOf("[ON]") >= 0;
             let self = this;
-            ["surround", "eq"].forEach(function(f) {
+            ["surround", "eq", "ec"].forEach(function(f) {
                 let re = new RegExp("\\b" + f + "\\b.*(\\[ON\\]|\\[off\\])", "i");
                 let m = lines[i].match(re);
                 if (m && self._effectItems[f]) {

@@ -1,7 +1,7 @@
 {
     "KPlugin": {
         "Name": "HiFi Suite",
-        "Description": "Universal audio control for any headset — volume, effects, battery",
+        "Description": "Universal audio control for any headset — volume, noise filter, surround, EQ, battery",
         "Icon": "audio-headphones",
         "Authors": [
             {
@@ -10,9 +10,10 @@
             }
         ],
         "Category": "Multimedia",
-        "Version": "1.1",
+        "Version": "3.0",
         "Website": "https://github.com/Pakrohk/linux-hifi-suite"
     },
     "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml",
     "KPackageStructure": "Plasma/Applet"
 }
