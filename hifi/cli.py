@@ -275,8 +275,10 @@ def eff_list():
 
 @eff_app.command(name="enable")
 def eff_enable(name: EffectName = typer.Argument(...)):
-    st = _detect()
-    if not _ok(st):
+    """Enable an audio effect."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
     proc = {"nc": s.enable_nc, "surround": s.enable_surround,
             "eq": s.enable_eq, "ec": s.enable_ec}[name.value]
@@ -285,12 +287,22 @@ def eff_enable(name: EffectName = typer.Argument(...)):
         typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
     typer.echo(f"Enabled: {name.value}")
+    if name.value == "nc":
+        typer.echo("Select 'Noise Cancelling Mic' as your input source.")
+    elif name.value == "surround":
+        typer.echo("Select the virtual surround sink as your output.")
+    elif name.value == "eq":
+        typer.echo("Select 'HiFi EQ' as your output.")
+    elif name.value == "ec":
+        typer.echo("Select 'HiFi Echo Cancelled Mic' as your input.")
 
 
 @eff_app.command(name="disable")
 def eff_disable(name: EffectName = typer.Argument(...)):
-    st = _detect()
-    if not _ok(st):
+    """Disable an audio effect."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
         raise typer.Exit(1)
     run({**st, "effect_to_disable": name.value}, s.disable_filter)
     typer.echo(f"Disabled: {name.value}")
