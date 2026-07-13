@@ -3,13 +3,15 @@
   <img src="https://img.shields.io/badge/Linux-Arch%20%7C%20Fedora%20%7C%20Ubuntu-232323?style=for-the-badge&labelColor=232323&color=fcc624" alt="Linux"/>
   <img src="https://img.shields.io/badge/PipeWire-Native-232323?style=for-the-badge&labelColor=232323&color=ff6b6b" alt="PipeWire"/>
   <img src="https://img.shields.io/badge/Status-Stable-232323?style=for-the-badge&labelColor=232323&color=2ecc71" alt="Status"/>
+  <img src="https://img.shields.io/badge/Python-3.10+-232323?style=for-the-badge&labelColor=232323&color=3776ab" alt="Python"/>
+  <img src="https://img.shields.io/badge/Typer-CLI-232323?style=for-the-badge&labelColor=232323&color=009688" alt="Typer"/>
 </p>
 
 <h1 align="center">HiFi Suite v3</h1>
 
 <p align="center">
   <b>Zero-config audio suite for wireless headsets on Linux</b><br/>
-  <sub>Volume control · Virtual surround · Noise cancellation · EQ · All DEs</sub>
+  <sub>Volume · Surround · Noise Filter · EQ · Low Latency · Device Management</sub>
 </p>
 
 <p align="center">
@@ -17,6 +19,9 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#effects">Effects</a> ·
+  <a href="#noise-filter">Noise Filter</a> ·
+  <a href="#low-latency">Low Latency</a> ·
+  <a href="#device-management">Device Management</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#contributing">Contributing</a>
 </p>
@@ -25,7 +30,7 @@
 
 ## What is HiFi Suite?
 
-HiFi Suite is a **unified audio management tool** for wireless headsets on Linux. It combines volume control, virtual surround sound, noise cancellation, and equalization into a single tool that **works out of the box** — no configuration needed.
+HiFi Suite is a **unified audio management tool** for wireless headsets on Linux. It combines volume control, virtual surround sound, noise filtering, equalization, and low-latency mode into a single tool that **works out of the box**.
 
 ### The Problem
 
@@ -33,18 +38,19 @@ Wireless headsets on Linux have fragmented audio control:
 - Volume sync between ALSA channels is broken on many USB dongles
 - Virtual surround requires manual PipeWire filter chain setup
 - Noise cancellation needs LADSPA plugins + config files
+- No way to filter noise on incoming audio (other person's side)
+- Low-latency mode requires manual PipeWire quantum configuration
 - Each desktop environment has its own widget — none work cross-DE
-- EasyEffects exists but doesn't auto-configure
 - No way to save per-headset settings
 
 ### The Solution
 
-HiFi Suite wraps PipeWire's native `wpctl` CLI with a simple interface:
-
 ```bash
-hifi-suite auto          # Detect headset, enable NC, start daemon — done
-hifi-suite vol set 75    # Set volume
-hifi-suite effect list   # See what's active
+hifi-suite auto              # Detect headset, enable filters, start daemon — done
+hifi-suite noise input       # Filter noise from your mic (outgoing)
+hifi-suite noise output      # Filter noise from other side (incoming)
+hifi-suite effect latency on # Low-latency for gaming (~3ms)
+hifi-suite device manage     # See all PipeWire nodes
 ```
 
 **One command. Zero config. Every headset.**
@@ -60,10 +66,13 @@ hifi-suite effect list   # See what's active
 | **Battery monitoring** | Shows battery level (UPower / PipeWire / bluetoothctl) |
 | **Volume control** | Set, mute, relative (+/-), software gain up to 150% |
 | **Virtual surround** | 7.1 and 7.1.4 via PipeWire SOFA spatializer |
-| **Noise cancellation** | RNNoise virtual mic — select as input, noise gone |
+| **Noise filter (input)** | RNNoise on your mic — outgoing audio cleaned |
+| **Noise filter (output)** | RNNoise on incoming audio — other person's noise removed |
+| **Noise filter (both)** | Both directions simultaneously |
 | **Convolution EQ** | Apply AutoEq `.wav` files as PipeWire filter chains |
-| **Echo cancellation** | PipeWire `module-echo-cancel` for speaker leakage |
-| **Custom profiles** | Per-headset JSON settings (EQ, SOFA, NC, volume) |
+| **Low-latency mode** | quantum=64 + RT priority — ~3ms latency for gaming |
+| **Device management** | List all PipeWire nodes, remove virtual devices |
+| **Custom profiles** | Per-headset JSON settings (EQ, SOFA, volume) |
 | **Learning system** | Remembers successful configs per device, auto-applies next time |
 | **3 DE widgets** | KDE Plasma 6, GNOME Shell 46+, Cinnamon |
 | **Systemd daemon** | Auto-start, persistent volume, socket-based control |
@@ -93,7 +102,7 @@ makepkg -si
 | Required | Purpose |
 |----------|---------|
 | `python` | Daemon and CLI |
-| `typer` | CLI framework (auto-completion, colored help) |
+| `python-typer` | CLI framework (auto-completion, colored help) |
 | `alsa-utils` | ALSA hardware control |
 | `pipewire` | Audio server |
 | `pipewire-alsa` | ALSA bridge |
@@ -101,10 +110,9 @@ makepkg -si
 
 | Optional | Purpose |
 |----------|---------|
-| `noise-suppression-for-voice` | RNNoise LADSPA plugin (recommended) |
-| `virtual-surround-manager` | Virtual 7.1/5.1 surround with HeSuVi WAV (recommended) |
-| `easyeffects` | GUI audio effects |
-| `realtime-privileges` | Low-latency audio |
+| `noise-suppression-for-voice` | RNNoise LADSPA plugin (recommended for noise filter) |
+| `virtual-surround-manager` | Virtual 7.1/5.1 surround with HeSuVi WAV |
+| `realtime-privileges` | Low-latency audio (RT priority) |
 | `plasma-desktop` | KDE Plasma widget |
 | `gnome-shell` | GNOME Shell extension |
 | `cinnamon` | Cinnamon applet |
@@ -117,21 +125,23 @@ makepkg -si
 # 1. Install
 paru -S hifi-suite-git
 
-# 2. Auto-configure (detects headset, enables NC, starts daemon)
+# 2. Auto-configure everything
 hifi-suite auto
 
 # 3. Control volume
 hifi-suite vol set 75     # Set to 75%
 hifi-suite vol mute       # Toggle mute
-hifi-suite vol get        # Show current volume
 
-# 4. Check status
-hifi-suite effect list    # See active effects
-hifi-suite device list    # List all PipeWire devices
-hifi-suite device battery # Show headset battery level
+# 4. Enable noise filter
+hifi-suite noise input    # Clean your mic (outgoing)
+
+# 5. Enable low-latency for gaming
+hifi-suite effect latency on
+
+# 6. Check status
+hifi-suite effect list    # See active effects + latency
+hifi-suite battery        # Show headset battery
 ```
-
-That's it. The daemon runs in the background, detects connect/disconnect events, and keeps everything in sync.
 
 ---
 
@@ -143,6 +153,8 @@ That's it. The daemon runs in the background, detects connect/disconnect events,
 hifi-suite auto           # Auto-detect + configure everything
 hifi-suite status         # Show device and effects status
 hifi-suite scan           # Force re-detection of headset
+hifi-suite battery        # Show headset battery level
+hifi-suite devices        # List all PipeWire devices
 hifi-suite effects        # List all effects and status
 hifi-suite default        # Set headset as default output
 hifi-suite select         # Interactive device selector
@@ -164,6 +176,8 @@ hifi-suite vol mute       # Toggle mute
 ```bash
 hifi-suite device list           # List all PipeWire devices
 hifi-suite device list --detail  # Devices with connection type
+hifi-suite device manage         # List ALL nodes (real + virtual + filters + streams)
+hifi-suite device remove <id>    # Remove a virtual PipeWire node
 hifi-suite device scan           # Force re-detection
 hifi-suite device battery        # Show headset battery level
 hifi-suite device default        # Set headset as default output
@@ -172,12 +186,22 @@ hifi-suite device default        # Set headset as default output
 ### Effects (`hifi-suite effect`)
 
 ```bash
-hifi-suite effect list           # List effects and status
-hifi-suite effect enable nc      # Enable noise cancellation
-hifi-suite effect disable nc     # Disable noise cancellation
-hifi-suite effect enable surround # Enable 7.1 surround
-hifi-suite effect enable eq      # Enable convolution EQ
-hifi-suite effect enable ec      # Enable echo cancellation
+hifi-suite effect list              # List effects and status
+hifi-suite effect enable nc         # Enable noise filter (input)
+hifi-suite effect enable surround   # Enable 7.1 surround
+hifi-suite effect enable eq         # Enable convolution EQ
+hifi-suite effect enable ec         # Enable noise filter (both directions)
+hifi-suite effect latency on        # Enable low-latency mode
+hifi-suite effect latency off       # Disable low-latency mode
+```
+
+### Noise Filter (`hifi-suite noise`)
+
+```bash
+hifi-suite noise input    # Filter noise on YOUR mic (outgoing audio)
+hifi-suite noise output   # Filter noise on incoming audio (other person)
+hifi-suite noise both     # Filter both directions simultaneously
+hifi-suite noise off      # Disable all noise filters
 ```
 
 ### Profiles (`hifi-suite profile`)
@@ -202,22 +226,33 @@ hifi-suite daemon status    # Check if running
 
 ## Effects
 
-### Noise Cancellation (RNNoise)
+### Noise Filter
 
-Automatic noise suppression using the RNNoise LADSPA plugin.
+Unified noise filtering that works in **3 modes**:
 
 ```bash
-hifi-suite effect enable nc
+hifi-suite noise input     # Clean YOUR mic (outgoing)
+hifi-suite noise output    # Clean incoming audio (other person's side)
+hifi-suite noise both      # Both directions
+hifi-suite noise off       # Disable all
 ```
 
-**How it works:** Creates a virtual microphone source called "Noise Cancelling Mic". Select it as your input in any app — all noise is automatically removed.
+**How it works:**
+- **Input mode**: Creates a virtual microphone "Noise Cancelling Mic" using RNNoise. Select it as your input in any app — your outgoing audio is cleaned.
+- **Output mode**: Creates a virtual output "Noise Filtered Output" using RNNoise. Select it as your output — incoming audio from the other side is cleaned.
+- **Both mode**: Both filters active simultaneously.
+
+**Requirements:**
+```bash
+sudo pacman -S noise-suppression-for-voice  # RNNoise LADSPA plugin
+```
 
 ### Virtual Surround
 
 7.1 and 7.1.4 virtual surround using PipeWire SOFA spatializer.
 
 ```bash
-hifi-suite effect enable surround    # 7.1
+hifi-suite effect enable surround
 ```
 
 **Requirements:**
@@ -234,12 +269,88 @@ hifi-suite effect enable eq
 
 Place your `.wav` EQ file at `~/.config/hifi-suite/eq.wav`.
 
-### Echo Cancellation
+### Low-Latency Mode
 
-For speakers or open-back headphones that leak audio.
+Reduces audio buffer size for lower latency — essential for gaming, live monitoring, and real-time applications.
 
 ```bash
-hifi-suite effect enable ec
+hifi-suite effect latency on    # Enable (~3ms latency)
+hifi-suite effect latency off   # Disable (default ~20ms)
+```
+
+**What it does:**
+- Sets PipeWire quantum to 64 samples (~3ms at 48kHz)
+- Enables real-time thread priority (nice=-11, rt.prio=88)
+- Reduces max-quantum to 256 for safety
+
+**Latency comparison:**
+
+| Mode | Quantum | Latency | Best for |
+|------|---------|---------|----------|
+| Default | 1024 | ~21ms | Music, video, calls |
+| Low Latency | 64 | **~3ms** | Gaming, live monitoring |
+
+**Works on:** USB headsets (best), PCI/internal audio, HDMI. Bluetooth has inherent ~40-80ms latency that can't be fully overcome.
+
+**Warning:** May cause audio glitches on slow systems. Disable if you hear crackling.
+
+### Effects Display
+
+```bash
+$ hifi-suite effects
+
+  Effects
+  ──────────────────────────────────────────────────
+  [ON]  Noise Cancelling (input)
+  [off] Noise Cancelling (output)
+  [off] 7.1 Surround
+  [off] Equalizer
+  [ON]  Low Latency Mode (quantum=64, rt priority)
+  ──────────────────────────────────────────────────
+  Tip: hifi-suite effect latency on  — for gaming/live monitoring
+```
+
+---
+
+## Device Management
+
+View and manage all PipeWire audio nodes — real devices, virtual devices, filters, and active streams.
+
+```bash
+hifi-suite device manage
+```
+
+**Example output:**
+
+```
+  PipeWire Nodes
+  ─────────────────────────────────────────────────────────────
+
+  Physical Devices
+  ······························································
+    46  H888 Wireless headset Analog Stereo
+    59  Ellesmere HDMI Audio [Radeon RX 470/480/570/580/590]
+    71  USB Audio Device Analog Stereo
+    73  Built-in Audio Digital Stereo (IEC958)
+
+  Active Filters
+  ······························································
+    34  capture.hifi_rnnoise                          [del]
+    45  hifi_rnnoise_source                           [del]
+
+  Active Streams
+  ······························································
+    47  Firefox
+   101  Firefox
+
+  ─────────────────────────────────────────────────────────────
+  [del] = can be removed | Use 'hifi-suite device remove <id>'
+```
+
+**Remove virtual devices:**
+```bash
+hifi-suite device remove 34    # Remove a filter node
+hifi-suite device remove 45    # Remove a virtual source
 ```
 
 ---
@@ -249,6 +360,31 @@ hifi-suite effect enable ec
 HiFi Suite v3 uses **Functional IOP (Intent-Oriented Programming)** — a hybrid approach combining functional programming with intent-based data flow.
 
 ### Core Principles
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    State (dict)                     │
+│         "What do I know about the system?"          │
+└──────────────────────┬──────────────────────────────┘
+                       │
+              ┌────────▼────────┐
+              │   Processor     │
+              │  (State → State)│
+              │  Pure function  │
+              │  No side effects│
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │   Pipeline      │
+              │ run(state, *steps)│
+              │   Composition   │
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │   CLI (Typer)   │
+              │  Just I/O       │
+              └─────────────────┘
+```
 
 1. **State = TypedDict** — simple dict, no class overhead
 2. **Processors = pure functions** — `State → State`, no side effects
@@ -280,7 +416,7 @@ from . import state as s
 result = run(
     {"volume": 75},
     s.detect_device,     # State → State (adds device info)
-    s.enable_nc,         # State → State (enables NC filter)
+    s.enable_nc,         # State → State (enables noise filter)
     s.set_volume,        # State → State (sets volume)
     after=s.record_outcome,  # Learning hook
 )
@@ -289,37 +425,110 @@ if result.get("error"):
     print(f"Error: {result['error']}")
 ```
 
-### Adding a New Feature
+---
 
-1. Add a processor in `state.py`:
+## Adding a New Feature
+
+Adding a new feature to HiFi Suite is simple — just 2 steps. No classes to inherit, no interfaces to implement, no decorators to register.
+
+### Step 1: Add a Processor
+
+Open `hifi/state.py` and add a pure function:
+
 ```python
 def my_new_feature(s: State) -> State:
+    """My awesome new feature."""
+    # Check for errors from previous steps
     if s.get("error"):
         return s
-    # ... do something ...
-    return {**s, "my_feature_enabled": True}
+
+    # Check if already enabled (for toggle commands)
+    if not s.get("my_feature_enabled"):
+        return s
+
+    # Do the actual work
+    from .audio import some_helper_function
+    result = some_helper_function()
+
+    if result:
+        return {**s, "my_feature_enabled": True}
+    else:
+        return {**s, "error": "Failed to enable my feature"}
 ```
 
-2. Add a Typer command in `cli.py`:
+### Step 2: Add a CLI Command
+
+Open `hifi/cli.py` and add a Typer command:
+
 ```python
-@app.command()
-def my_command():
-    st = _detect()
-    st = run(st, s.my_new_feature)
-    typer.echo(f"Done: {st.get('my_feature_enabled')}")
+@eff_app.command(name="my-feature")
+def my_feature():
+    """Enable my awesome new feature."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    st = run({**st, "my_feature_enabled": True}, s.my_new_feature)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Enabled: my-feature")
 ```
 
-That's it. No classes to inherit, no interfaces to implement, no decorators to register.
+### That's it!
 
-### Why This Design?
+```bash
+hifi-suite effect my-feature    # Your new command works!
+```
 
-| Old (OOP) | New (Functional IOP) |
-|---|---|
-| 16 files, 2695 lines | **8 files, 1496 lines** |
-| Intent dataclass + Pipeline class | State dict + run() function |
-| `pipe.process(Intent(...))` | `run(state, step1, step2)` |
-| Processor class methods | Pure functions `State → State` |
-| 50-line `_build_pipeline()` | 35-line `pipeline.py` total |
+### Real Example: How Noise Filter Was Added
+
+**Step 1** — `state.py`:
+```python
+def enable_nc(s: State) -> State:
+    if s.get("error") or not s.get("nc_enabled"):
+        return s
+    mode = s.get("noise_mode", "input")  # "input", "output", "both"
+    from .audio import find_rnnoise, FilterManager
+    plugin = find_rnnoise()
+    if not plugin:
+        return {**s, "error": "RNNoise not found"}
+    from .audio import find_physical_mic, render_nc, render_noise_output
+    fm = FilterManager()
+    if mode in ("input", "both"):
+        mic = find_physical_mic()
+        config = render_nc(plugin, mic_node=mic["node_name"] if mic else "")
+        fm.load("nc", config)
+    if mode in ("output", "both"):
+        out_node = s.get("device", {}).get("node_name", "")
+        config = render_noise_output(plugin, out_node)
+        fm.load("nc_out", config)
+    return s
+```
+
+**Step 2** — `cli.py`:
+```python
+@noise_app.command(name="input")
+def noise_input():
+    """Enable noise cancellation on your microphone (outgoing)."""
+    st = run({}, s.detect_device)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    st = run({**st, "nc_enabled": True, "noise_mode": "input"}, s.enable_nc)
+    if st.get("error"):
+        typer.echo(f"Error: {st['error']}", err=True)
+        raise typer.Exit(1)
+    typer.echo("Noise filter enabled on input (mic)")
+```
+
+### Code Style Rules
+
+- **Pure processors** — each function in `state.py` takes `State`, returns `State`. No side effects.
+- **Thin CLI** — `cli.py` only handles I/O (typer prompts, printing). All logic in processors.
+- **No classes** — unless you need methods on data (e.g., `FilterManager`).
+- **English only** — all code comments and docstrings in English.
+- **Error propagation** — check `s.get("error")` at the start, return early if set.
 
 ---
 
@@ -336,23 +545,16 @@ python3 hifi-suite --help
 python3 hifi-suite auto
 ```
 
-### Code Style
-
-- **Pure processors** — each function in `state.py` takes `State`, returns `State`. No side effects.
-- **Thin CLI** — `cli.py` only handles I/O (typer prompts, printing). All logic in processors.
-- **No classes** — unless you need methods on data (e.g., `FilterManager` for filter lifecycle).
-- **English only** — all code comments and docstrings in English.
-
 ### Project Layout
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `state.py` | ~230 | State TypedDict + all processors |
+| `state.py` | ~260 | State TypedDict + all processors |
 | `pipeline.py` | ~35 | `run()` and `compose()` |
-| `cli.py` | ~360 | Typer CLI commands |
+| `cli.py` | ~450 | Typer CLI commands |
 | `daemon.py` | ~190 | Unix socket daemon |
 | `device.py` | ~125 | Device detection |
-| `audio.py` | ~530 | Volume, filters, battery, profiles, display |
+| `audio.py` | ~660 | Volume, filters, battery, profiles, display |
 | `util.py` | ~20 | Shared subprocess runner |
 
 ### Testing
