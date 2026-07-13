@@ -17,6 +17,7 @@ PlasmoidItem {
     property int batteryLevel: -1
     property bool batteryCharging: false
     property var effectStates: ({})
+    property bool lowLatency: false
     property bool updatingSlider: false
 
     preferredRepresentation: compactRepresentation
@@ -38,7 +39,6 @@ PlasmoidItem {
 
     function handleOutput(cmd, out) {
         if (cmd.includes("status")) {
-            // Parse: device=H888 id=56 node=... bus=usb volume=80%
             var devMatch = out.match(/device=([^\s]+(?:\s+[^\s]+)*?)\s+(?:id|node)=/)
             var busMatch = out.match(/bus=(\S+)/)
             var volMatch = out.match(/volume=(\d+)%/)
@@ -68,23 +68,24 @@ PlasmoidItem {
             } else {
                 batteryLevel = -1
             }
-        } else if (cmd.includes("vol get")) {
-            var v = out.match(/(\d+)/)
-            if (v) {
-                currentVolume = parseInt(v[1])
-                isMuted = currentVolume === 0
-                updatingSlider = true
-                slider.value = currentVolume
-                updatingSlider = false
-            }
         } else if (cmd.includes("effects")) {
-            // Parse effect states from hifi-suite effects output
             var lines = out.split("\n")
             for (var i = 0; i < lines.length; i++) {
-                var effMatch = lines[i].match(/^\s*(nc|surround|surround714|eq|ec)\s+(ON|off)/)
-                if (effMatch) {
-                    effectStates[effMatch[1]] = effMatch[2] === "ON"
+                // Match: [ON]  Noise Filter — Input (your mic, outgoing)
+                //        [off] 7.1 Surround
+                //        [ON]  Low Latency Mode (quantum=64, rt priority)
+                if (lines[i].includes("Low Latency")) {
+                    lowLatency = lines[i].includes("[ON]")
                 }
+                var ncIn = lines[i].includes("Noise Filter") && lines[i].includes("Input")
+                var ncOut = lines[i].includes("Noise Filter") && lines[i].includes("Output")
+                var surr = lines[i].includes("7.1 Surround")
+                var eq = lines[i].includes("Equalizer")
+
+                if (ncIn) effectStates["nc_in"] = lines[i].includes("[ON]")
+                if (ncOut) effectStates["nc_out"] = lines[i].includes("[ON]")
+                if (surr) effectStates["surround"] = lines[i].includes("[ON]")
+                if (eq) effectStates["eq"] = lines[i].includes("[ON]")
             }
             effectStatesChanged()
         }
@@ -111,11 +112,47 @@ PlasmoidItem {
         }
     }
 
+    function toggleNoise(mode) {
+        if (effectStates["nc_" + mode]) {
+            run("hifi-suite noise off")
+            effectStates["nc_in"] = false
+            effectStates["nc_out"] = false
+        } else {
+            run("hifi-suite noise " + mode)
+            if (mode === "both") {
+                effectStates["nc_in"] = true
+                effectStates["nc_out"] = true
+            } else if (mode === "input") {
+                effectStates["nc_in"] = true
+                effectStates["nc_out"] = false
+            } else if (mode === "output") {
+                effectStates["nc_in"] = false
+                effectStates["nc_out"] = true
+            }
+        }
+        effectStatesChanged()
+        // Refresh actual state
+        refreshTimer.restart()
+    }
+
     function toggleEffect(name) {
         var on = !effectStates[name]
-        run("hifi-suite " + (on ? "enable " : "disable ") + name)
+        run("hifi-suite " + (on ? "effect enable " : "effect disable ") + name)
         effectStates[name] = on
         effectStatesChanged()
+    }
+
+    function toggleLatency() {
+        run("hifi-suite effect latency " + (lowLatency ? "off" : "on"))
+        lowLatency = !lowLatency
+    }
+
+    function resetAll() {
+        run("hifi-suite reset")
+        effectStates = {}
+        lowLatency = false
+        effectStatesChanged()
+        refreshTimer.restart()
     }
 
     function connectionLabel() {
@@ -138,6 +175,7 @@ PlasmoidItem {
     }
     Timer { id: muteTimer; interval: 100; onTriggered: updateVol() }
     Timer { id: debounceTimer; interval: 20; onTriggered: setVol(slider.value) }
+    Timer { id: refreshTimer; interval: 500; onTriggered: detect() }
 
     // ── Compact Representation (Panel Icon) ─────────────────────────────
     compactRepresentation: Item {
@@ -187,11 +225,11 @@ PlasmoidItem {
 
     // ── Full Representation (Popup) ─────────────────────────────────────
     fullRepresentation: ColumnLayout {
-        Layout.preferredWidth: 300
-        Layout.preferredHeight: 360
+        Layout.preferredWidth: 320
+        Layout.preferredHeight: 520
         spacing: 0
 
-        // Header: Device name + connection type
+        // Header
         RowLayout {
             Layout.fillWidth: true
             Layout.margins: Kirigami.Units.smallSpacing
@@ -204,7 +242,6 @@ PlasmoidItem {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
-
                 PlasmaComponents3.Label {
                     text: isConnected ? deviceName : "No headset"
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -212,7 +249,6 @@ PlasmoidItem {
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
-
                 PlasmaComponents3.Label {
                     visible: isConnected && connectionLabel() !== ""
                     text: connectionLabel()
@@ -225,22 +261,16 @@ PlasmoidItem {
             // Battery badge
             Rectangle {
                 visible: batteryLevel >= 0
-                width: batteryLabel.width + 12
-                height: 20
-                radius: 10
+                width: batteryLabel.width + 12; height: 20; radius: 10
                 color: batteryLevel < 20 ? Kirigami.Theme.negativeTextColor
                     : batteryLevel < 50 ? Kirigami.Theme.neutralTextColor
                     : Kirigami.Theme.positiveTextColor
-
                 RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 2
-
+                    anchors.centerIn: parent; spacing: 2
                     Kirigami.Icon {
                         source: batteryCharging ? "battery-flash-symbolic" : "battery-symbolic"
                         implicitWidth: 12; implicitHeight: 12
                     }
-
                     PlasmaComponents3.Label {
                         id: batteryLabel
                         text: batteryLevel + "%"
@@ -253,7 +283,7 @@ PlasmoidItem {
 
         PlasmaComponents3.Separator { Layout.fillWidth: true }
 
-        // Volume display
+        // Volume
         PlasmaComponents3.Label {
             text: currentVolume + " %"
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.5
@@ -270,9 +300,7 @@ PlasmoidItem {
         RowLayout {
             Layout.fillWidth: true
             Layout.margins: Kirigami.Units.smallSpacing
-
             Kirigami.Icon { source: "audio-volume-low"; implicitWidth: 16; implicitHeight: 16 }
-
             PlasmaComponents3.Slider {
                 id: slider
                 Layout.fillWidth: true
@@ -284,7 +312,6 @@ PlasmoidItem {
                     debounceTimer.restart()
                 }
             }
-
             Kirigami.Icon { source: "audio-volume-high"; implicitWidth: 16; implicitHeight: 16 }
         }
 
@@ -297,6 +324,60 @@ PlasmoidItem {
             icon.name: isMuted ? "audio-volume-muted" : "audio-volume-high"
             text: isMuted ? "Unmute" : "Mute"
             onClicked: toggleMute()
+        }
+
+        PlasmaComponents3.Separator { Layout.fillWidth: true }
+
+        // Noise Filter section
+        PlasmaComponents3.Label {
+            text: "Noise Filter"
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            font.bold: true
+            Layout.fillWidth: true
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.leftMargin: Kirigami.Units.smallSpacing
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.margins: Kirigami.Units.smallSpacing
+            spacing: 4
+
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "Input"
+                icon.name: "microphone"
+                checkable: true
+                checked: effectStates["nc_in"] || false
+                onClicked: toggleNoise("input")
+                PlasmaComponents3.ToolTip {
+                    text: "Filter noise from YOUR mic"
+                }
+            }
+
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "Output"
+                icon.name: "speaker"
+                checkable: true
+                checked: effectStates["nc_out"] || false
+                onClicked: toggleNoise("output")
+                PlasmaComponents3.ToolTip {
+                    text: "Filter noise from other person"
+                }
+            }
+
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "Both"
+                icon.name: "audio-headphones"
+                checkable: true
+                checked: (effectStates["nc_in"] || false) && (effectStates["nc_out"] || false)
+                onClicked: toggleNoise("both")
+                PlasmaComponents3.ToolTip {
+                    text: "Filter both directions"
+                }
+            }
         }
 
         PlasmaComponents3.Separator { Layout.fillWidth: true }
@@ -318,22 +399,52 @@ PlasmoidItem {
             rowSpacing: 4
             columnSpacing: 4
 
-            Repeater {
-                model: ListModel {
-                    ListElement { key: "nc"; label: "NC"; icon: "noise-canceling" }
-                    ListElement { key: "surround"; label: "7.1"; icon: "speaker" }
-                    ListElement { key: "eq"; label: "EQ"; icon: "view-statistics" }
-                    ListElement { key: "ec"; label: "EC"; icon: "microphone" }
-                }
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "7.1 Surround"
+                icon.name: "speaker"
+                checkable: true
+                checked: effectStates["surround"] || false
+                onClicked: toggleEffect("surround")
+            }
 
-                PlasmaComponents3.ToolButton {
-                    required property var model
-                    Layout.fillWidth: true
-                    text: model.label
-                    icon.name: model.icon
-                    checkable: true
-                    checked: effectStates[model.key] || false
-                    onClicked: toggleEffect(model.key)
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: "EQ"
+                icon.name: "view-statistics"
+                checkable: true
+                checked: effectStates["eq"] || false
+                onClicked: toggleEffect("eq")
+            }
+        }
+
+        PlasmaComponents3.Separator { Layout.fillWidth: true }
+
+        // Low Latency + Reset row
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.margins: Kirigami.Units.smallSpacing
+            spacing: 4
+
+            PlasmaComponents3.ToolButton {
+                Layout.fillWidth: true
+                text: lowLatency ? "Latency: ON" : "Latency: OFF"
+                icon.name: "speedometer"
+                checkable: true
+                checked: lowLatency
+                onClicked: toggleLatency()
+                PlasmaComponents3.ToolTip {
+                    text: lowLatency ? "Disable low-latency mode" : "Enable low-latency (~3ms)"
+                }
+            }
+
+            PlasmaComponents3.Button {
+                Layout.fillWidth: true
+                text: "Reset All"
+                icon.name: "edit-clear"
+                onClicked: resetAll()
+                PlasmaComponents3.ToolTip {
+                    text: "Remove all filters, restore defaults"
                 }
             }
         }

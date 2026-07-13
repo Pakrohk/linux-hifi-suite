@@ -22,6 +22,7 @@ class HiFiIndicator extends PanelMenu.Button {
         this._battery = -1;
         this._batteryCharging = false;
         this._effects = {};
+        this._lowLatency = false;
         this._updating = false;
 
         this._icon = new St.Icon({ icon_name: 'audio-volume-muted-symbolic', style_class: 'system-status-icon' });
@@ -66,17 +67,60 @@ class HiFiIndicator extends PanelMenu.Button {
         this._muteBtn.connect('activate', () => this._mute());
         this.menu.addMenuItem(this._muteBtn);
 
-        // Effects submenu
+        // ── Noise Filter submenu ──
+        let noiseSub = new PopupMenu.PopupSubMenuMenuItem('Noise Filter');
+        this.menu.addMenuItem(noiseSub);
+
+        this._noiseInputItem = new PopupMenu.PopupSwitchMenuItem('Input (your mic)', false);
+        this._noiseInputItem.connect('toggled', (_, on) => {
+            this._cmd(on ? 'noise input' : 'noise off');
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => { this._refresh(); return false; });
+        });
+        noiseSub.menu.addMenuItem(this._noiseInputItem);
+
+        this._noiseOutputItem = new PopupMenu.PopupSwitchMenuItem('Output (other person)', false);
+        this._noiseOutputItem.connect('toggled', (_, on) => {
+            this._cmd(on ? 'noise output' : 'noise off');
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => { this._refresh(); return false; });
+        });
+        noiseSub.menu.addMenuItem(this._noiseOutputItem);
+
+        this._noiseBothItem = new PopupMenu.PopupSwitchMenuItem('Both directions', false);
+        this._noiseBothItem.connect('toggled', (_, on) => {
+            this._cmd(on ? 'noise both' : 'noise off');
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => { this._refresh(); return false; });
+        });
+        noiseSub.menu.addMenuItem(this._noiseBothItem);
+
+        // ── Effects submenu ──
         let effectsSub = new PopupMenu.PopupSubMenuMenuItem('Effects');
         this.menu.addMenuItem(effectsSub);
 
         this._effectItems = {};
-        ['nc', 'surround', 'eq', 'ec'].forEach(f => {
+        ['surround', 'eq'].forEach(f => {
             let item = new PopupMenu.PopupSwitchMenuItem(f.toUpperCase(), false);
             item.connect('toggled', (_, on) => this._toggleEffect(f, on));
             effectsSub.menu.addMenuItem(item);
             this._effectItems[f] = item;
         });
+
+        // ── Low Latency toggle ──
+        this._latencyItem = new PopupMenu.PopupSwitchMenuItem('Low Latency Mode', false);
+        this._latencyItem.connect('toggled', (_, on) => {
+            this._cmd('effect latency ' + (on ? 'on' : 'off'));
+            this._lowLatency = on;
+        });
+        this.menu.addMenuItem(this._latencyItem);
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        // ── Reset button ──
+        this._resetItem = new PopupMenu.PopupMenuItem('Reset All Filters');
+        this._resetItem.connect('activate', () => {
+            this._cmd('reset');
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, () => { this._refresh(); return false; });
+        });
+        this.menu.addMenuItem(this._resetItem);
 
         // Scroll to adjust
         this.connect('scroll-event', (_, event) => {
@@ -151,7 +195,7 @@ class HiFiIndicator extends PanelMenu.Button {
     }
 
     _toggleEffect(name, on) {
-        this._cmd(on ? 'enable ' + name : 'disable ' + name);
+        this._cmd(on ? 'effect enable ' + name : 'effect disable ' + name);
     }
 
     _refresh() {
@@ -200,15 +244,25 @@ class HiFiIndicator extends PanelMenu.Button {
             this._batLabel.text = '';
         }
 
-        // Refresh effect states
+        // Refresh effects
         let effOut = this._cmd('effects');
-        ['nc', 'surround', 'eq', 'ec'].forEach(f => {
-            let re = new RegExp('^\\s*' + f + '\\s+(ON|off)', 'm');
-            let m = effOut.match(re);
-            if (m && this._effectItems[f]) {
-                this._effectItems[f].setToggleState(m[1] === 'ON');
-            }
-        });
+        let lines = effOut.split('\n');
+        let ncIn = false, ncOut = false;
+        for (let line of lines) {
+            if (line.includes('Noise Filter') && line.includes('Input')) ncIn = line.includes('[ON]');
+            if (line.includes('Noise Filter') && line.includes('Output')) ncOut = line.includes('[ON]');
+            if (line.includes('Low Latency')) this._lowLatency = line.includes('[ON]');
+            ['surround', 'eq'].forEach(f => {
+                let re = new RegExp('\\b' + f + '\\b.*\\[ON\\]', 'i');
+                if (re.test(line) && this._effectItems[f]) this._effectItems[f].setToggleState(true);
+                let reOff = new RegExp('\\b' + f + '\\b.*\\[off\\]', 'i');
+                if (reOff.test(line) && this._effectItems[f]) this._effectItems[f].setToggleState(false);
+            });
+        }
+        this._noiseInputItem.setToggleState(ncIn);
+        this._noiseOutputItem.setToggleState(ncOut);
+        this._noiseBothItem.setToggleState(ncIn && ncOut);
+        this._latencyItem.setToggleState(this._lowLatency);
     }
 
     _startMonitor() {
